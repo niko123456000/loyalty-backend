@@ -380,11 +380,11 @@ class SalesforceService {
         
         const tierResult = await conn.query(`
           SELECT Id, LoyaltyTierId, LoyaltyTier.Name, LoyaltyTier.SequenceNumber,
-                 Status, EffectiveDate, TierExpirationDate,
+                 EffectiveDate, TierExpirationDate,
                  LoyaltyTierGroupId, LoyaltyTierGroup.Name
           FROM LoyaltyMemberTier
           WHERE LoyaltyMemberId = '${memberId}'
-          AND Status = 'Active'
+          AND EffectiveDate <= TODAY
           ORDER BY EffectiveDate DESC
           LIMIT 1
         `);
@@ -393,7 +393,7 @@ class SalesforceService {
         
         if (tierResult.totalSize > 0) {
           const tierData = tierResult.records[0];
-          console.log(`[TIER] Found active tier:`, JSON.stringify(tierData, null, 2));
+          console.log(`[TIER] Found tier:`, JSON.stringify(tierData, null, 2));
           
           tier = {
             name: tierData.LoyaltyTier?.Name || tierData.LoyaltyTierGroup?.Name || 'Member',
@@ -403,7 +403,7 @@ class SalesforceService {
           
           console.log(`[TIER] Returning tier: ${tier.name} (Level: ${tier.level})`);
         } else {
-          console.log(`[TIER] No active tier found for member ${memberId}`);
+          console.log(`[TIER] No tier found for member ${memberId}`);
           tier = { name: 'Standard', level: 1 };
         }
       } catch (tierError) {
