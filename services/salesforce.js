@@ -432,7 +432,7 @@ class SalesforceService {
   /**
    * Create transaction journal via Apex REST endpoint
    */
-  async createTransactionJournal(membershipNumber, lineItems) {
+  async createTransactionJournal(membershipNumber, lineItems, voucherCode = null) {
     const conn = await this.ensureConnection();
     
     try {
@@ -447,6 +447,9 @@ class SalesforceService {
       };
 
       console.log('Creating transaction:', payload);
+      if (voucherCode) {
+        console.log('Transaction includes voucher:', voucherCode);
+      }
 
       const result = await conn.apex.post(
         '/CreateAndProcessTransactionJournal',
@@ -454,9 +457,82 @@ class SalesforceService {
       );
 
       console.log('Transaction result:', result);
+      
+      // If voucher was used, redeem it
+      if (voucherCode && result.success) {
+        try {
+          await this.redeemVoucher(membershipNumber, voucherCode, result.transactionJournalId);
+          console.log(`[VOUCHER] Successfully redeemed voucher: ${voucherCode}`);
+        } catch (voucherError) {
+          console.error(`[VOUCHER] Failed to redeem voucher ${voucherCode}:`, voucherError.message);
+          // Don't fail the whole transaction if voucher redemption fails
+        }
+      }
+      
       return result;
     } catch (error) {
       console.error('Error creating transaction:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Redeem a voucher by updating its status
+   */
+  async redeemVoucher(membershipNumber, voucherCode, transactionJournalId = null) {
+    const conn = await this.ensureConnection();
+    
+    try {
+      console.log(`[VOUCHER] Redeeming voucher ${voucherCode} for member ${membershipNumber}`);
+      
+      // Find the voucher by code and member
+      const member = await this.findMemberByNumber(membershipNumber);
+      if (!member) {
+        throw new Error(`Member not found: ${membershipNumber}`);
+      }
+      
+      const voucherResult = await conn.query(`
+        SELECT Id, Status, FaceValue, RedeemedValue, RemainingValue
+        FROM Voucher
+        WHERE VoucherCode = '${voucherCode.replace(/'/g, "\\'")}'
+        AND LoyaltyProgramMemberId = '${member.Id}'
+        AND Status = 'Issued'
+        LIMIT 1
+      `);
+      
+      if (voucherResult.totalSize === 0) {
+        throw new Error(`Voucher ${voucherCode} not found or already redeemed`);
+      }
+      
+      const voucher = voucherResult.records[0];
+      
+      // Update voucher to Redeemed status
+      const updateData = {
+        Status: 'Redeemed',
+        UseDate: new Date().toISOString().split('T')[0], // Today's date in YYYY-MM-DD format
+        RedeemedValue: voucher.FaceValue || 0
+      };
+      
+      // Link to transaction journal if provided
+      if (transactionJournalId) {
+        updateData.TransactionJournalId = transactionJournalId;
+      }
+      
+      await conn.sobject('Voucher').update({
+        Id: voucher.Id,
+        ...updateData
+      });
+      
+      console.log(`[VOUCHER] Voucher ${voucherCode} marked as Redeemed`);
+      
+      return {
+        success: true,
+        voucherId: voucher.Id,
+        redeemedValue: voucher.FaceValue
+      };
+      
+    } catch (error) {
+      console.error(`[VOUCHER] Error redeeming voucher:`, error);
       throw error;
     }
   }

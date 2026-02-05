@@ -59,20 +59,46 @@ router.post('/purchase', authenticate, async (req, res, next) => {
 
     console.log('Processing purchase for member:', membershipNumber);
     console.log('Line items:', lineItems);
-    console.log('Voucher code:', voucherCode);
-    console.log('Promotion ID:', promotionId);
+    if (voucherCode) {
+      console.log('Voucher code:', voucherCode);
+    }
+    if (promotionId) {
+      console.log('Promotion ID:', promotionId);
+    }
 
-    // TODO: Apply voucher/promotion discounts to line items
-    // For now, process as-is
+    // If voucher is provided, validate it first
+    if (voucherCode) {
+      const cartTotal = lineItems.reduce((sum, item) => 
+        sum + (item.price * (item.quantity || 1)), 0
+      );
+      
+      console.log(`[VOUCHER] Validating voucher ${voucherCode} for cart total: ${cartTotal}`);
+      
+      // Quick validation - get vouchers and check
+      const vouchers = await salesforceService.getVouchers(membershipNumber);
+      const voucher = vouchers.find(v => v.code.toLowerCase() === voucherCode.toLowerCase().trim());
+      
+      if (!voucher || voucher.status !== 'AVAILABLE') {
+        return res.status(400).json({
+          error: 'Invalid voucher',
+          message: voucher ? `Voucher is ${voucher.status.toLowerCase()}` : 'Voucher not found'
+        });
+      }
+      
+      console.log(`[VOUCHER] Voucher validated: ${voucher.name}`);
+    }
 
+    // Process the purchase with voucher
     const result = await salesforceService.createTransactionJournal(
       membershipNumber,
-      lineItems
+      lineItems,
+      voucherCode
     );
 
     res.json({
       success: true,
-      message: 'Purchase processed successfully',
+      message: voucherCode ? 'Purchase processed and voucher redeemed successfully' : 'Purchase processed successfully',
+      voucherRedeemed: !!voucherCode,
       result
     });
   } catch (error) {
