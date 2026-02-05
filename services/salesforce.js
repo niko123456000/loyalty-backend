@@ -266,22 +266,35 @@ class SalesforceService {
     const conn = await this.ensureConnection();
     
     try {
-      const result = await conn.query(`
+      // Build query - make program name filter optional
+      let query = `
         SELECT Id, MembershipNumber, ContactId, Contact.Name, Contact.Email,
                MemberStatus, EnrollmentDate, ProgramId, Program.Name
         FROM LoyaltyProgramMember
-        WHERE MembershipNumber = '${membershipNumber}'
-        AND Program.Name = '${process.env.LOYALTY_PROGRAM_NAME}'
-        LIMIT 1
-      `);
+        WHERE MembershipNumber = '${membershipNumber.replace(/'/g, "\\'")}'
+      `;
+      
+      // Add program name filter if set
+      const programName = process.env.LOYALTY_PROGRAM_NAME || 'Cirrus Loyalty';
+      if (programName) {
+        query += ` AND Program.Name = '${programName.replace(/'/g, "\\'")}'`;
+      }
+      
+      query += ' LIMIT 1';
+
+      console.log('Querying for member:', membershipNumber);
+      const result = await conn.query(query);
 
       if (result.totalSize === 0) {
+        console.log('Member not found:', membershipNumber);
         return null;
       }
 
+      console.log('Member found:', result.records[0].MembershipNumber);
       return result.records[0];
     } catch (error) {
       console.error('Error finding member:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
       throw error;
     }
   }
