@@ -306,6 +306,56 @@ class SalesforceService {
       `);
 
       const currency = currencyResult.records[0];
+      
+      // Calculate balance from ledger entries if PointsBalance is 0 or outdated
+      // This provides immediate balance updates even if scheduled process hasn't run
+      let calculatedBalance = currency ? currency.PointsBalance : 0;
+      
+      if (currency && currency.LoyaltyProgramCurrencyId) {
+        try {
+          // Calculate credits
+          const creditsResult = await conn.query(`
+            SELECT SUM(Points) totalPoints
+            FROM LoyaltyLedger
+            WHERE LoyaltyProgramMemberId = '${memberId}'
+            AND LoyaltyProgramCurrencyId = '${currency.LoyaltyProgramCurrencyId}'
+            AND EventType = 'Credit'
+          `);
+          
+          // Calculate debits
+          const debitsResult = await conn.query(`
+            SELECT SUM(Points) totalPoints
+            FROM LoyaltyLedger
+            WHERE LoyaltyProgramMemberId = '${memberId}'
+            AND LoyaltyProgramCurrencyId = '${currency.LoyaltyProgramCurrencyId}'
+            AND EventType = 'Debit'
+          `);
+          
+          const credits = creditsResult.records[0]?.totalPoints || 0;
+          const debits = debitsResult.records[0]?.totalPoints || 0;
+          calculatedBalance = credits - debits;
+          
+          // Use calculated balance if PointsBalance is 0 or if last accrual date is old
+          const lastAccrualDate = currency.LastAccrualProcessedDate 
+            ? new Date(currency.LastAccrualProcessedDate) 
+            : null;
+          const hoursSinceLastAccrual = lastAccrualDate 
+            ? (Date.now() - lastAccrualDate.getTime()) / (1000 * 60 * 60)
+            : Infinity;
+          
+          // If balance is 0 but we have ledger entries, or if last accrual was > 1 hour ago, use calculated
+          if ((currency.PointsBalance === 0 && calculatedBalance > 0) || hoursSinceLastAccrual > 1) {
+            console.log(`Using calculated balance: ${calculatedBalance} (PointsBalance: ${currency.PointsBalance}, LastAccrual: ${currency.LastAccrualProcessedDate})`);
+          } else {
+            // Use the official balance if it's recent
+            calculatedBalance = currency.PointsBalance;
+          }
+        } catch (ledgerError) {
+          // If ledger query fails, fall back to PointsBalance
+          console.log('Could not calculate balance from ledger, using PointsBalance:', ledgerError.message);
+          calculatedBalance = currency.PointsBalance || 0;
+        }
+      }
 
       // Try to get member tier (if tiers are enabled in the org)
       let tier = null;
@@ -340,7 +390,7 @@ class SalesforceService {
         enrollmentDate: member.EnrollmentDate,
         contactId: member.ContactId,
         programId: member.ProgramId,
-        pointsBalance: currency ? currency.PointsBalance : 0,
+        pointsBalance: calculatedBalance, // Use calculated balance from ledger entries
         lastAccrualDate: currency ? currency.LastAccrualProcessedDate : null,
         tier: tier
       };
