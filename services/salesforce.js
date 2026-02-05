@@ -306,8 +306,10 @@ class SalesforceService {
     const conn = await this.ensureConnection();
     
     try {
-      // Get member details
+      // Get member details - try to include tier field if available
       const member = await conn.sobject('LoyaltyProgramMember').retrieve(memberId);
+      
+      console.log('[MEMBER] Member fields:', Object.keys(member));
       
       // Get member currency (points balance)
       const currencyResult = await conn.query(`
@@ -370,42 +372,55 @@ class SalesforceService {
         }
       }
 
-      // Try to get member tier (if tiers are enabled in the org)
+      // Try to get tier information - attempt multiple approaches
       let tier = null;
-      try {
-        // First, try a simple query to see if any tier records exist
-        const tierResult = await conn.query(`
-          SELECT Id, TierGroupId, TierGroup.Name, TierLevel, 
-                 TierExpirationDate, TierEffectiveDate, LoyaltyProgramMemberId
-          FROM LoyaltyProgramMemberTier
-          WHERE LoyaltyProgramMemberId = '${memberId}'
-          ORDER BY TierLevel DESC, TierEffectiveDate DESC
-          LIMIT 1
-        `);
+      
+      // Approach 1: Check if tier is a field on LoyaltyProgramMember
+      if (member.LoyaltyTierId || member.TierId || member.Tier) {
+        console.log('[TIER] Found tier field on member object');
+        tier = {
+          name: member.TierName || member.Tier || 'Member',
+          level: member.TierLevel || 1
+        };
+      }
+      
+      // Approach 2: Try different tier object names
+      if (!tier) {
+        const tierObjectNames = [
+          'LoyaltyProgramMemberTier',
+          'LoyaltyMemberTier', 
+          'ssot__LoyaltyMemberTier__dlm'
+        ];
         
-        console.log(`[TIER] Query result for member ${memberId}: ${tierResult.totalSize} records found`);
-        
-        if (tierResult.totalSize > 0) {
-          const tierData = tierResult.records[0];
-          console.log(`[TIER] Tier details:`, JSON.stringify(tierData, null, 2));
-          
-          tier = {
-            name: tierData.TierGroup?.Name || 'Unknown',
-            level: tierData.TierLevel,
-            expirationDate: tierData.TierExpirationDate
-          };
-          
-          console.log(`[TIER] Returning tier: ${tier.name} (Level: ${tier.level})`);
-        } else {
-          console.log(`[TIER] No tier records found for member ${memberId}`);
+        for (const objectName of tierObjectNames) {
+          try {
+            console.log(`[TIER] Trying tier object: ${objectName}`);
+            const tierResult = await conn.query(`
+              SELECT Id, Name, TierLevel
+              FROM ${objectName}
+              WHERE LoyaltyProgramMemberId = '${memberId}'
+              ORDER BY TierLevel DESC
+              LIMIT 1
+            `);
+            
+            if (tierResult.totalSize > 0) {
+              const tierData = tierResult.records[0];
+              console.log(`[TIER] Found tier using ${objectName}:`, JSON.stringify(tierData));
+              tier = {
+                name: tierData.Name || 'Member',
+                level: tierData.TierLevel || 1
+              };
+              break;
+            }
+          } catch (err) {
+            console.log(`[TIER] ${objectName} not available: ${err.message}`);
+          }
         }
-      } catch (tierError) {
-        // Tiers not enabled or not available - that's okay
-        console.log(`[TIER] Error fetching tier: ${tierError.message}`);
-        if (tierError.stack) {
-          console.log(`[TIER] Stack trace: ${tierError.stack}`);
-        }
-        console.log('[TIER] Tiers not available (this is normal if tiers are not configured)');
+      }
+      
+      if (!tier) {
+        console.log('[TIER] No tier information available - using default');
+        tier = { name: 'Standard', level: 1 };
       }
 
       return {
