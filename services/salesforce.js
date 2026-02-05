@@ -377,7 +377,7 @@ class SalesforceService {
           SELECT Id, TierGroupId, TierGroup.Name, TierLevel, 
                  TierExpirationDate, TierEffectiveDate
           FROM LoyaltyProgramMemberTier
-          WHERE MemberId = '${memberId}'
+          WHERE LoyaltyProgramMemberId = '${memberId}'
           AND TierEffectiveDate <= TODAY
           AND (TierExpirationDate = null OR TierExpirationDate >= TODAY)
           ORDER BY TierLevel DESC, TierEffectiveDate DESC
@@ -397,6 +397,7 @@ class SalesforceService {
         }
       } catch (tierError) {
         // Tiers not enabled or not available - that's okay
+        console.log(`[TIER] Error fetching tier: ${tierError.message}`);
         console.log('Tiers not available (this is normal if tiers are not configured)');
       }
 
