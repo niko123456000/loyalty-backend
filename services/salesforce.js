@@ -563,74 +563,85 @@ class SalesforceService {
 
   /**
    * Get vouchers for a member
-   * Uses Salesforce Loyalty Management API
+   * Query directly from Voucher object
    */
   async getVouchers(membershipNumber) {
     const conn = await this.ensureConnection();
     
     try {
-      const programName = process.env.LOYALTY_PROGRAM_NAME || 'Cirrus Loyalty';
-      const instanceUrl = this.instanceUrl;
-      
-      // Salesforce Loyalty API endpoint for vouchers
-      const url = `${instanceUrl}/services/apexrest/LoyaltyProgramProcess/${programName}/GetVouchers`;
-      
-      const params = new URLSearchParams({
-        membershipNumber: membershipNumber,
-        pageNumber: '1'
-      });
-
       console.log(`[VOUCHERS] Fetching vouchers for member: ${membershipNumber}`);
       
-      const response = await fetch(`${url}?${params}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${conn.accessToken}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Vouchers API error: ${response.status} - ${errorText}`);
+      // First, get the member ID
+      const member = await this.findMemberByNumber(membershipNumber);
+      if (!member) {
+        console.log(`[VOUCHERS] Member not found: ${membershipNumber}`);
+        return [];
       }
-
-      const data = await response.json();
-      console.log(`[VOUCHERS] Raw response for member ${membershipNumber}:`, JSON.stringify(data, null, 2));
       
-      // Transform Salesforce response to our format
-      const vouchers = (data.voucherResponse || []).map((voucher, index) => {
-        // Determine discount type - check multiple possible fields
-        // Salesforce may store this in different fields depending on voucher definition
-        const voucherDefType = voucher.voucherDefinitionType || voucher.voucherType || '';
-        const isPercentage = voucherDefType.toLowerCase().includes('percentage') ||
-                            voucherDefType.toLowerCase().includes('percent') ||
-                            (voucher.faceValue && voucher.faceValue <= 100 && voucher.faceValue > 0 && 
-                             voucher.faceValue % 1 === 0 && voucher.faceValue < 1000); // Likely percentage if integer <= 100
+      const memberId = member.Id;
+      console.log(`[VOUCHERS] Querying vouchers for member ID: ${memberId}`);
+      
+      // Query Voucher records for this member
+      const voucherResult = await conn.query(`
+        SELECT Id, VoucherCode, VoucherNumber, Status, EffectiveDate, ExpirationDate,
+               FaceValue, RedeemedValue, RemainingValue, Type,
+               VoucherDefinitionId, VoucherDefinition.Name, VoucherDefinition.Description,
+               VoucherDefinition.VoucherType, VoucherDefinition.DiscountPercent,
+               VoucherDefinition.MinimumPurchaseAmount,
+               PromotionId, Promotion.Name, UseDate, ProductId,
+               IsVoucherDefinitionActive, IsVoucherPartiallyRedeemable,
+               LoyaltyProgramMemberId
+        FROM Voucher
+        WHERE LoyaltyProgramMemberId = '${memberId}'
+        ORDER BY EffectiveDate DESC
+        LIMIT 50
+      `);
+      
+      console.log(`[VOUCHERS] Found ${voucherResult.totalSize} vouchers for member ${membershipNumber}`);
+      
+      if (voucherResult.totalSize === 0) {
+        return [];
+      }
+      
+      // Transform Salesforce voucher records to our format
+      const vouchers = voucherResult.records.map((voucher, index) => {
+        console.log(`[VOUCHERS] Processing voucher ${index + 1}:`, {
+          code: voucher.VoucherCode,
+          status: voucher.Status,
+          type: voucher.Type,
+          faceValue: voucher.FaceValue
+        });
         
-        const faceValue = voucher.faceValue || voucher.discountValue || 0;
+        // Determine discount type and value
+        const voucherType = voucher.Type || voucher.VoucherDefinition?.VoucherType || '';
+        const isPercentage = voucherType.toLowerCase().includes('percentage') ||
+                            voucherType.toLowerCase().includes('percent');
+        
+        const faceValue = voucher.FaceValue || voucher.VoucherDefinition?.DiscountPercent || 0;
         
         return {
-          id: voucher.id || `voucher-${Date.now()}-${index}`,
-          code: voucher.voucherCode || '',
-          name: voucher.voucherDefinition || voucher.voucherDefinitionName || 'Voucher',
-          description: voucher.description || '',
-          discountAmount: isPercentage ? 0 : faceValue, // Fixed amount discount
-          discountPercentage: isPercentage ? faceValue : null, // Percentage discount (0-100)
+          id: voucher.Id,
+          code: voucher.VoucherCode || voucher.VoucherNumber || '',
+          name: voucher.VoucherDefinition?.Name || 'Voucher',
+          description: voucher.VoucherDefinition?.Description || '',
+          discountAmount: isPercentage ? 0 : faceValue,
+          discountPercentage: isPercentage ? faceValue : null,
           discountType: isPercentage ? 'PERCENTAGE' : 'FIXED_AMOUNT',
-          expiryDate: voucher.expirationDate || voucher.expiryDate || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
-          status: voucher.status === 'Issued' ? 'AVAILABLE' : 
-                  voucher.status === 'Redeemed' ? 'REDEEMED' : 
-                  voucher.status === 'Expired' ? 'EXPIRED' : 'AVAILABLE',
-          minimumPurchase: voucher.minimumPurchaseAmount || voucher.minimumPurchase || 0
+          expiryDate: voucher.ExpirationDate || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+          status: voucher.Status === 'Issued' ? 'AVAILABLE' : 
+                  voucher.Status === 'Redeemed' ? 'REDEEMED' : 
+                  voucher.Status === 'Expired' ? 'EXPIRED' : 'AVAILABLE',
+          minimumPurchase: voucher.VoucherDefinition?.MinimumPurchaseAmount || 0
         };
       });
-
+      
+      console.log(`[VOUCHERS] Successfully processed ${vouchers.length} vouchers`);
       return vouchers;
+      
     } catch (error) {
-      console.error('Error getting vouchers:', error);
-      // Return empty array if API not available rather than failing
-      console.log('Returning empty vouchers list');
+      console.error('[VOUCHERS] Error getting vouchers:', error.message);
+      console.error('[VOUCHERS] Stack:', error.stack);
+      // Return empty array if query fails rather than failing the whole request
       return [];
     }
   }
