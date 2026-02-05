@@ -16,6 +16,24 @@ router.post('/login', async (req, res, next) => {
       return res.status(400).json({ error: 'Membership number is required' });
     }
 
+    // Check if JWT_SECRET is configured
+    if (!process.env.JWT_SECRET) {
+      console.error('JWT_SECRET environment variable is not set');
+      return res.status(500).json({ 
+        error: 'Server configuration error',
+        message: 'JWT_SECRET is not configured'
+      });
+    }
+
+    // Check if Salesforce is connected
+    if (!salesforceService.isConnected()) {
+      console.error('Salesforce is not connected');
+      return res.status(503).json({ 
+        error: 'Service unavailable',
+        message: 'Salesforce connection is not available. Please try again later.'
+      });
+    }
+
     console.log('Login attempt with membership number:', membershipNumber);
 
     // Find member in Salesforce
@@ -64,7 +82,21 @@ router.post('/login', async (req, res, next) => {
       }
     });
   } catch (error) {
-    next(error);
+    console.error('Login error:', error);
+    console.error('Error stack:', error.stack);
+    
+    // Provide more detailed error information
+    const errorMessage = error.message || 'Internal server error';
+    const statusCode = error.statusCode || 500;
+    
+    res.status(statusCode).json({
+      error: 'Login failed',
+      message: errorMessage,
+      ...(process.env.NODE_ENV === 'development' && { 
+        stack: error.stack,
+        details: error 
+      })
+    });
   }
 });
 
