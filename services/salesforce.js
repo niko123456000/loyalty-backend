@@ -373,32 +373,39 @@ class SalesforceService {
       // Try to get member tier (if tiers are enabled in the org)
       let tier = null;
       try {
+        // First, try a simple query to see if any tier records exist
         const tierResult = await conn.query(`
           SELECT Id, TierGroupId, TierGroup.Name, TierLevel, 
-                 TierExpirationDate, TierEffectiveDate
+                 TierExpirationDate, TierEffectiveDate, LoyaltyProgramMemberId
           FROM LoyaltyProgramMemberTier
           WHERE LoyaltyProgramMemberId = '${memberId}'
-          AND TierEffectiveDate <= TODAY
-          AND (TierExpirationDate = null OR TierExpirationDate >= TODAY)
           ORDER BY TierLevel DESC, TierEffectiveDate DESC
           LIMIT 1
         `);
         
+        console.log(`[TIER] Query result for member ${memberId}: ${tierResult.totalSize} records found`);
+        
         if (tierResult.totalSize > 0) {
           const tierData = tierResult.records[0];
-          console.log(`[TIER] Found tier for member ${memberId}: ${tierData.TierGroup?.Name} (Level: ${tierData.TierLevel})`);
+          console.log(`[TIER] Tier details:`, JSON.stringify(tierData, null, 2));
+          
           tier = {
-            name: tierData.TierGroup?.Name,
+            name: tierData.TierGroup?.Name || 'Unknown',
             level: tierData.TierLevel,
             expirationDate: tierData.TierExpirationDate
           };
+          
+          console.log(`[TIER] Returning tier: ${tier.name} (Level: ${tier.level})`);
         } else {
-          console.log(`[TIER] No active tier found for member ${memberId}`);
+          console.log(`[TIER] No tier records found for member ${memberId}`);
         }
       } catch (tierError) {
         // Tiers not enabled or not available - that's okay
         console.log(`[TIER] Error fetching tier: ${tierError.message}`);
-        console.log('Tiers not available (this is normal if tiers are not configured)');
+        if (tierError.stack) {
+          console.log(`[TIER] Stack trace: ${tierError.stack}`);
+        }
+        console.log('[TIER] Tiers not available (this is normal if tiers are not configured)');
       }
 
       return {
