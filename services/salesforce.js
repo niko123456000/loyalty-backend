@@ -583,14 +583,9 @@ class SalesforceService {
       
       // Query Voucher records for this member
       const voucherResult = await conn.query(`
-        SELECT Id, VoucherCode, VoucherNumber, Status, EffectiveDate, ExpirationDate,
-               FaceValue, RedeemedValue, RemainingValue, Type,
-               VoucherDefinitionId, VoucherDefinition.Name, VoucherDefinition.Description,
-               VoucherDefinition.VoucherType, VoucherDefinition.DiscountPercent,
-               VoucherDefinition.MinimumPurchaseAmount,
-               PromotionId, Promotion.Name, UseDate, ProductId,
-               IsVoucherDefinitionActive, IsVoucherPartiallyRedeemable,
-               LoyaltyProgramMemberId
+        SELECT Id, VoucherCode, Status, EffectiveDate, ExpirationDate,
+               FaceValue, RedeemedValue, Type,
+               VoucherDefinitionId, LoyaltyProgramMemberId
         FROM Voucher
         WHERE LoyaltyProgramMemberId = '${memberId}'
         ORDER BY EffectiveDate DESC
@@ -613,17 +608,17 @@ class SalesforceService {
         });
         
         // Determine discount type and value
-        const voucherType = voucher.Type || voucher.VoucherDefinition?.VoucherType || '';
+        const voucherType = voucher.Type || '';
         const isPercentage = voucherType.toLowerCase().includes('percentage') ||
                             voucherType.toLowerCase().includes('percent');
         
-        const faceValue = voucher.FaceValue || voucher.VoucherDefinition?.DiscountPercent || 0;
+        const faceValue = voucher.FaceValue || 0;
         
         return {
           id: voucher.Id,
-          code: voucher.VoucherCode || voucher.VoucherNumber || '',
-          name: voucher.VoucherDefinition?.Name || 'Voucher',
-          description: voucher.VoucherDefinition?.Description || '',
+          code: voucher.VoucherCode || '',
+          name: 'Voucher', // Will get from VoucherDefinition later
+          description: '',
           discountAmount: isPercentage ? 0 : faceValue,
           discountPercentage: isPercentage ? faceValue : null,
           discountType: isPercentage ? 'PERCENTAGE' : 'FIXED_AMOUNT',
@@ -631,7 +626,7 @@ class SalesforceService {
           status: voucher.Status === 'Issued' ? 'AVAILABLE' : 
                   voucher.Status === 'Redeemed' ? 'REDEEMED' : 
                   voucher.Status === 'Expired' ? 'EXPIRED' : 'AVAILABLE',
-          minimumPurchase: voucher.VoucherDefinition?.MinimumPurchaseAmount || 0
+          minimumPurchase: 0
         };
       });
       
