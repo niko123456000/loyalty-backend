@@ -586,7 +586,7 @@ class SalesforceService {
         SELECT Id, VoucherCode, Name, Status, EffectiveDate, ExpirationDate,
                FaceValue, DiscountPercent, RedeemedValue, RemainingValue,
                VoucherDefinitionId, VoucherDefinition.Name, 
-               VoucherDefinition.Description, VoucherDefinition.VoucherType,
+               VoucherDefinition.Description, VoucherDefinition.Type,
                LoyaltyProgramMemberId, UseDate, PromotionId
         FROM Voucher
         WHERE LoyaltyProgramMemberId = '${memberId}'
@@ -606,13 +606,13 @@ class SalesforceService {
           code: voucher.VoucherCode,
           name: voucher.Name,
           status: voucher.Status,
-          voucherType: voucher.VoucherDefinition?.VoucherType,
+          voucherType: voucher.VoucherDefinition?.Type,
           faceValue: voucher.FaceValue,
           discountPercent: voucher.DiscountPercent
         });
         
         // Determine discount type and value
-        const voucherType = voucher.VoucherDefinition?.VoucherType || '';
+        const voucherType = voucher.VoucherDefinition?.Type || '';
         const isPercentage = voucherType.toLowerCase().includes('percentage') ||
                             voucherType.toLowerCase().includes('percent') ||
                             voucher.DiscountPercent != null;
