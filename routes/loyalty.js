@@ -48,7 +48,7 @@ router.get('/transactions', authenticate, async (req, res, next) => {
 router.post('/purchase', authenticate, async (req, res, next) => {
   try {
     const membershipNumber = req.user.membershipNumber;
-    const { lineItems } = req.body;
+    const { lineItems, voucherCode, promotionId } = req.body;
 
     if (!lineItems || !Array.isArray(lineItems) || lineItems.length === 0) {
       return res.status(400).json({ 
@@ -59,6 +59,11 @@ router.post('/purchase', authenticate, async (req, res, next) => {
 
     console.log('Processing purchase for member:', membershipNumber);
     console.log('Line items:', lineItems);
+    console.log('Voucher code:', voucherCode);
+    console.log('Promotion ID:', promotionId);
+
+    // TODO: Apply voucher/promotion discounts to line items
+    // For now, process as-is
 
     const result = await salesforceService.createTransactionJournal(
       membershipNumber,
@@ -69,6 +74,48 @@ router.post('/purchase', authenticate, async (req, res, next) => {
       success: true,
       message: 'Purchase processed successfully',
       result
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/loyalty/promotions
+ * Get eligible promotions for the member
+ */
+router.get('/promotions', authenticate, async (req, res, next) => {
+  try {
+    const membershipNumber = req.user.membershipNumber;
+    
+    console.log('Fetching promotions for member:', membershipNumber);
+    
+    const promotions = await salesforceService.getEligiblePromotions(membershipNumber);
+    
+    res.json({
+      promotions,
+      total: promotions.length
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/loyalty/vouchers
+ * Get vouchers for the member
+ */
+router.get('/vouchers', authenticate, async (req, res, next) => {
+  try {
+    const membershipNumber = req.user.membershipNumber;
+    
+    console.log('Fetching vouchers for member:', membershipNumber);
+    
+    const vouchers = await salesforceService.getVouchers(membershipNumber);
+    
+    res.json({
+      vouchers,
+      total: vouchers.length
     });
   } catch (error) {
     next(error);

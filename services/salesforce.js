@@ -454,6 +454,125 @@ class SalesforceService {
       throw error;
     }
   }
+
+  /**
+   * Get eligible promotions for a member
+   * Uses Salesforce Loyalty Management API
+   */
+  async getEligiblePromotions(membershipNumber) {
+    const conn = await this.ensureConnection();
+    
+    try {
+      const programName = process.env.LOYALTY_PROGRAM_NAME || 'Cirrus Loyalty';
+      const instanceUrl = this.instanceUrl;
+      
+      // Salesforce Loyalty API endpoint for promotions
+      const url = `${instanceUrl}/services/apexrest/LoyaltyProgramProcess/${programName}/GetPromotions`;
+      
+      const requestBody = {
+        inputParameters: [{
+          membershipNumber: membershipNumber
+        }]
+      };
+
+      console.log('Fetching promotions for member:', membershipNumber);
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${conn.accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Promotions API error: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log('Promotions response:', JSON.stringify(data, null, 2));
+      
+      // Transform Salesforce response to our format
+      const promotions = (data.outputParameters?.outputParameters?.results || []).map(promo => ({
+        id: promo.promotionId || `promo-${Date.now()}`,
+        name: promo.promotionName || 'Promotion',
+        description: promo.description || '',
+        promotionType: promo.loyaltyPromotionType === 'BONUS_POINTS' ? 'BONUS_POINTS' : 'PERCENTAGE_DISCOUNT',
+        discountValue: promo.totalPromotionRewardPointsVal || promo.discountValue || 0,
+        expiryDate: promo.endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        isEnrolled: promo.isEnrolled || false,
+        imageUrl: null
+      }));
+
+      return promotions;
+    } catch (error) {
+      console.error('Error getting promotions:', error);
+      // Return empty array if API not available rather than failing
+      console.log('Returning empty promotions list');
+      return [];
+    }
+  }
+
+  /**
+   * Get vouchers for a member
+   * Uses Salesforce Loyalty Management API
+   */
+  async getVouchers(membershipNumber) {
+    const conn = await this.ensureConnection();
+    
+    try {
+      const programName = process.env.LOYALTY_PROGRAM_NAME || 'Cirrus Loyalty';
+      const instanceUrl = this.instanceUrl;
+      
+      // Salesforce Loyalty API endpoint for vouchers
+      const url = `${instanceUrl}/services/apexrest/LoyaltyProgramProcess/${programName}/GetVouchers`;
+      
+      const params = new URLSearchParams({
+        membershipNumber: membershipNumber,
+        pageNumber: '1'
+      });
+
+      console.log('Fetching vouchers for member:', membershipNumber);
+      
+      const response = await fetch(`${url}?${params}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${conn.accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Vouchers API error: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log('Vouchers response:', JSON.stringify(data, null, 2));
+      
+      // Transform Salesforce response to our format
+      const vouchers = (data.voucherResponse || []).map(voucher => ({
+        id: voucher.id || `voucher-${Date.now()}`,
+        code: voucher.voucherCode || '',
+        name: voucher.voucherDefinition || 'Voucher',
+        description: voucher.description || '',
+        discountAmount: voucher.faceValue || 0,
+        expiryDate: voucher.expirationDate || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+        status: voucher.status === 'Issued' ? 'AVAILABLE' : 
+                voucher.status === 'Redeemed' ? 'REDEEMED' : 'EXPIRED',
+        minimumPurchase: voucher.minimumPurchaseAmount || 0
+      }));
+
+      return vouchers;
+    } catch (error) {
+      console.error('Error getting vouchers:', error);
+      // Return empty array if API not available rather than failing
+      console.log('Returning empty vouchers list');
+      return [];
+    }
+  }
 }
 
 // Export singleton instance
