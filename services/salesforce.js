@@ -583,9 +583,11 @@ class SalesforceService {
       
       // Query Voucher records for this member
       const voucherResult = await conn.query(`
-        SELECT Id, VoucherCode, Status, EffectiveDate, ExpirationDate,
-               FaceValue, RedeemedValue, Type,
-               VoucherDefinitionId, LoyaltyProgramMemberId
+        SELECT Id, VoucherCode, Name, Status, EffectiveDate, ExpirationDate,
+               FaceValue, DiscountPercent, RedeemedValue, RemainingValue,
+               VoucherDefinitionId, VoucherDefinition.Name, 
+               VoucherDefinition.Description, VoucherDefinition.VoucherType,
+               LoyaltyProgramMemberId, UseDate, PromotionId
         FROM Voucher
         WHERE LoyaltyProgramMemberId = '${memberId}'
         ORDER BY EffectiveDate DESC
@@ -602,25 +604,28 @@ class SalesforceService {
       const vouchers = voucherResult.records.map((voucher, index) => {
         console.log(`[VOUCHERS] Processing voucher ${index + 1}:`, {
           code: voucher.VoucherCode,
+          name: voucher.Name,
           status: voucher.Status,
-          type: voucher.Type,
-          faceValue: voucher.FaceValue
+          voucherType: voucher.VoucherDefinition?.VoucherType,
+          faceValue: voucher.FaceValue,
+          discountPercent: voucher.DiscountPercent
         });
         
         // Determine discount type and value
-        const voucherType = voucher.Type || '';
+        const voucherType = voucher.VoucherDefinition?.VoucherType || '';
         const isPercentage = voucherType.toLowerCase().includes('percentage') ||
-                            voucherType.toLowerCase().includes('percent');
+                            voucherType.toLowerCase().includes('percent') ||
+                            voucher.DiscountPercent != null;
         
-        const faceValue = voucher.FaceValue || 0;
+        const discountValue = voucher.DiscountPercent || voucher.FaceValue || 0;
         
         return {
           id: voucher.Id,
-          code: voucher.VoucherCode || '',
-          name: 'Voucher', // Will get from VoucherDefinition later
-          description: '',
-          discountAmount: isPercentage ? 0 : faceValue,
-          discountPercentage: isPercentage ? faceValue : null,
+          code: voucher.VoucherCode || voucher.Name || '',
+          name: voucher.VoucherDefinition?.Name || 'Voucher',
+          description: voucher.VoucherDefinition?.Description || '',
+          discountAmount: isPercentage ? 0 : discountValue,
+          discountPercentage: isPercentage ? discountValue : null,
           discountType: isPercentage ? 'PERCENTAGE' : 'FIXED_AMOUNT',
           expiryDate: voucher.ExpirationDate || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
           status: voucher.Status === 'Issued' ? 'AVAILABLE' : 
