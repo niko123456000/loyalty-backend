@@ -88,15 +88,21 @@ router.get('/promotions', authenticate, async (req, res, next) => {
   try {
     const membershipNumber = req.user.membershipNumber;
     
-    console.log('Fetching promotions for member:', membershipNumber);
+    console.log(`[PROMOTIONS] Fetching promotions for member: ${membershipNumber}`);
     
     const promotions = await salesforceService.getEligiblePromotions(membershipNumber);
+    
+    console.log(`[PROMOTIONS] Found ${promotions.length} promotions for member ${membershipNumber}`);
+    if (promotions.length > 0) {
+      console.log(`[PROMOTIONS] Promotion names: ${promotions.map(p => p.name).join(', ')}`);
+    }
     
     res.json({
       promotions,
       total: promotions.length
     });
   } catch (error) {
+    console.error(`[PROMOTIONS] Error fetching promotions for member ${req.user.membershipNumber}:`, error);
     next(error);
   }
 });
@@ -109,13 +115,110 @@ router.get('/vouchers', authenticate, async (req, res, next) => {
   try {
     const membershipNumber = req.user.membershipNumber;
     
-    console.log('Fetching vouchers for member:', membershipNumber);
+    console.log(`[VOUCHERS] Fetching vouchers for member: ${membershipNumber}`);
     
     const vouchers = await salesforceService.getVouchers(membershipNumber);
+    
+    console.log(`[VOUCHERS] Found ${vouchers.length} vouchers for member ${membershipNumber}`);
+    if (vouchers.length > 0) {
+      console.log(`[VOUCHERS] Voucher codes: ${vouchers.map(v => v.code).join(', ')}`);
+      console.log(`[VOUCHERS] Voucher names: ${vouchers.map(v => v.name).join(', ')}`);
+    }
     
     res.json({
       vouchers,
       total: vouchers.length
+    });
+  } catch (error) {
+    console.error(`[VOUCHERS] Error fetching vouchers for member ${req.user.membershipNumber}:`, error);
+    next(error);
+  }
+});
+
+/**
+ * POST /api/loyalty/vouchers/validate
+ * Validate a voucher code and calculate discount
+ */
+router.post('/vouchers/validate', authenticate, async (req, res, next) => {
+  try {
+    const membershipNumber = req.user.membershipNumber;
+    const { voucherCode, cartTotal } = req.body;
+
+    if (!voucherCode) {
+      return res.status(400).json({ 
+        valid: false,
+        error: 'Voucher code is required' 
+      });
+    }
+
+    if (cartTotal === undefined || cartTotal < 0) {
+      return res.status(400).json({ 
+        valid: false,
+        error: 'Valid cart total is required' 
+      });
+    }
+
+    console.log('Validating voucher:', voucherCode, 'for cart total:', cartTotal);
+
+    // Get all vouchers for the member
+    const vouchers = await salesforceService.getVouchers(membershipNumber);
+    
+    // Find voucher by code
+    const voucher = vouchers.find(v => 
+      v.code.toLowerCase() === voucherCode.toLowerCase().trim()
+    );
+
+    if (!voucher) {
+      return res.json({
+        valid: false,
+        error: 'Voucher code not found'
+      });
+    }
+
+    // Check if voucher is available
+    if (voucher.status !== 'AVAILABLE') {
+      return res.json({
+        valid: false,
+        error: `Voucher is ${voucher.status.toLowerCase()}`
+      });
+    }
+
+    // Check expiration
+    const expiryDate = new Date(voucher.expiryDate);
+    const now = new Date();
+    if (expiryDate < now) {
+      return res.json({
+        valid: false,
+        error: 'Voucher has expired'
+      });
+    }
+
+    // Check minimum purchase requirement
+    if (voucher.minimumPurchase > 0 && cartTotal < voucher.minimumPurchase) {
+      return res.json({
+        valid: false,
+        error: `Minimum purchase of $${voucher.minimumPurchase.toFixed(2)} required`
+      });
+    }
+
+    // Calculate discount amount
+    let discountAmount = 0;
+    if (voucher.discountType === 'PERCENTAGE' && voucher.discountPercentage) {
+      // Percentage discount: calculate from cart total
+      discountAmount = (cartTotal * voucher.discountPercentage) / 100;
+    } else {
+      // Fixed amount discount
+      discountAmount = voucher.discountAmount;
+      // Don't allow discount to exceed cart total
+      discountAmount = Math.min(discountAmount, cartTotal);
+    }
+
+    console.log('Voucher validated. Discount:', discountAmount);
+
+    res.json({
+      valid: true,
+      voucher: voucher,
+      discountAmount: Math.round(discountAmount * 100) / 100 // Round to 2 decimal places
     });
   } catch (error) {
     next(error);

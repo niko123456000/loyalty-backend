@@ -378,18 +378,22 @@ class SalesforceService {
                  TierExpirationDate, TierEffectiveDate
           FROM LoyaltyProgramMemberTier
           WHERE MemberId = '${memberId}'
-          AND TierExpirationDate > TODAY
-          ORDER BY TierLevel DESC
+          AND TierEffectiveDate <= TODAY
+          AND (TierExpirationDate = null OR TierExpirationDate >= TODAY)
+          ORDER BY TierLevel DESC, TierEffectiveDate DESC
           LIMIT 1
         `);
         
         if (tierResult.totalSize > 0) {
           const tierData = tierResult.records[0];
+          console.log(`[TIER] Found tier for member ${memberId}: ${tierData.TierGroup?.Name} (Level: ${tierData.TierLevel})`);
           tier = {
             name: tierData.TierGroup?.Name,
             level: tierData.TierLevel,
             expirationDate: tierData.TierExpirationDate
           };
+        } else {
+          console.log(`[TIER] No active tier found for member ${memberId}`);
         }
       } catch (tierError) {
         // Tiers not enabled or not available - that's okay
@@ -488,7 +492,7 @@ class SalesforceService {
         }]
       };
 
-      console.log('Fetching promotions for member:', membershipNumber);
+      console.log(`[PROMOTIONS] Fetching promotions for member: ${membershipNumber}`);
       
       const response = await fetch(url, {
         method: 'POST',
@@ -505,10 +509,24 @@ class SalesforceService {
       }
 
       const data = await response.json();
-      console.log('Promotions response:', JSON.stringify(data, null, 2));
+      console.log(`[PROMOTIONS] Raw API response for member ${membershipNumber}:`, JSON.stringify(data, null, 2));
+      
+      // Check if we got any results
+      const results = data.outputParameters?.outputParameters?.results || [];
+      console.log(`[PROMOTIONS] Number of promotions returned: ${results.length}`);
+      
+      if (results.length === 0) {
+        console.log(`[PROMOTIONS] No promotions found for member ${membershipNumber}. Possible reasons:`);
+        console.log(`[PROMOTIONS] - Promotion not active or outside date range`);
+        console.log(`[PROMOTIONS] - Member doesn't meet promotion eligibility conditions`);
+        console.log(`[PROMOTIONS] - Promotion requires enrollment and member hasn't enrolled`);
+        console.log(`[PROMOTIONS] - Promotion not associated with program "${programName}"`);
+      }
       
       // Transform Salesforce response to our format
-      const promotions = (data.outputParameters?.outputParameters?.results || []).map(promo => ({
+      const promotions = results.map(promo => {
+        console.log(`[PROMOTIONS] Processing promotion: ${promo.promotionName || 'Unknown'} (ID: ${promo.promotionId})`);
+        return {
         id: promo.promotionId || `promo-${Date.now()}`,
         name: promo.promotionName || 'Promotion',
         description: promo.description || '',
@@ -517,7 +535,10 @@ class SalesforceService {
         expiryDate: promo.endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
         isEnrolled: promo.isEnrolled || false,
         imageUrl: null
-      }));
+      };
+      });
+      
+      console.log(`[PROMOTIONS] Successfully processed ${promotions.length} promotions for member ${membershipNumber}`);
 
       return promotions;
     } catch (error) {
@@ -547,7 +568,7 @@ class SalesforceService {
         pageNumber: '1'
       });
 
-      console.log('Fetching vouchers for member:', membershipNumber);
+      console.log(`[VOUCHERS] Fetching vouchers for member: ${membershipNumber}`);
       
       const response = await fetch(`${url}?${params}`, {
         method: 'GET',
@@ -563,20 +584,35 @@ class SalesforceService {
       }
 
       const data = await response.json();
-      console.log('Vouchers response:', JSON.stringify(data, null, 2));
+      console.log(`[VOUCHERS] Raw response for member ${membershipNumber}:`, JSON.stringify(data, null, 2));
       
       // Transform Salesforce response to our format
-      const vouchers = (data.voucherResponse || []).map(voucher => ({
-        id: voucher.id || `voucher-${Date.now()}`,
-        code: voucher.voucherCode || '',
-        name: voucher.voucherDefinition || 'Voucher',
-        description: voucher.description || '',
-        discountAmount: voucher.faceValue || 0,
-        expiryDate: voucher.expirationDate || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
-        status: voucher.status === 'Issued' ? 'AVAILABLE' : 
-                voucher.status === 'Redeemed' ? 'REDEEMED' : 'EXPIRED',
-        minimumPurchase: voucher.minimumPurchaseAmount || 0
-      }));
+      const vouchers = (data.voucherResponse || []).map((voucher, index) => {
+        // Determine discount type - check multiple possible fields
+        // Salesforce may store this in different fields depending on voucher definition
+        const voucherDefType = voucher.voucherDefinitionType || voucher.voucherType || '';
+        const isPercentage = voucherDefType.toLowerCase().includes('percentage') ||
+                            voucherDefType.toLowerCase().includes('percent') ||
+                            (voucher.faceValue && voucher.faceValue <= 100 && voucher.faceValue > 0 && 
+                             voucher.faceValue % 1 === 0 && voucher.faceValue < 1000); // Likely percentage if integer <= 100
+        
+        const faceValue = voucher.faceValue || voucher.discountValue || 0;
+        
+        return {
+          id: voucher.id || `voucher-${Date.now()}-${index}`,
+          code: voucher.voucherCode || '',
+          name: voucher.voucherDefinition || voucher.voucherDefinitionName || 'Voucher',
+          description: voucher.description || '',
+          discountAmount: isPercentage ? 0 : faceValue, // Fixed amount discount
+          discountPercentage: isPercentage ? faceValue : null, // Percentage discount (0-100)
+          discountType: isPercentage ? 'PERCENTAGE' : 'FIXED_AMOUNT',
+          expiryDate: voucher.expirationDate || voucher.expiryDate || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+          status: voucher.status === 'Issued' ? 'AVAILABLE' : 
+                  voucher.status === 'Redeemed' ? 'REDEEMED' : 
+                  voucher.status === 'Expired' ? 'EXPIRED' : 'AVAILABLE',
+          minimumPurchase: voucher.minimumPurchaseAmount || voucher.minimumPurchase || 0
+        };
+      });
 
       return vouchers;
     } catch (error) {
