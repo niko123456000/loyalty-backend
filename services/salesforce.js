@@ -372,54 +372,43 @@ class SalesforceService {
         }
       }
 
-      // Try to get tier information - attempt multiple approaches
+      // Get member tier from LoyaltyMemberTier object
       let tier = null;
       
-      // Approach 1: Check if tier is a field on LoyaltyProgramMember
-      if (member.LoyaltyTierId || member.TierId || member.Tier) {
-        console.log('[TIER] Found tier field on member object');
-        tier = {
-          name: member.TierName || member.Tier || 'Member',
-          level: member.TierLevel || 1
-        };
-      }
-      
-      // Approach 2: Try different tier object names
-      if (!tier) {
-        const tierObjectNames = [
-          'LoyaltyProgramMemberTier',
-          'LoyaltyMemberTier', 
-          'ssot__LoyaltyMemberTier__dlm'
-        ];
+      try {
+        console.log(`[TIER] Querying LoyaltyMemberTier for member ${memberId}`);
         
-        for (const objectName of tierObjectNames) {
-          try {
-            console.log(`[TIER] Trying tier object: ${objectName}`);
-            const tierResult = await conn.query(`
-              SELECT Id, Name, TierLevel
-              FROM ${objectName}
-              WHERE LoyaltyProgramMemberId = '${memberId}'
-              ORDER BY TierLevel DESC
-              LIMIT 1
-            `);
-            
-            if (tierResult.totalSize > 0) {
-              const tierData = tierResult.records[0];
-              console.log(`[TIER] Found tier using ${objectName}:`, JSON.stringify(tierData));
-              tier = {
-                name: tierData.Name || 'Member',
-                level: tierData.TierLevel || 1
-              };
-              break;
-            }
-          } catch (err) {
-            console.log(`[TIER] ${objectName} not available: ${err.message}`);
-          }
+        const tierResult = await conn.query(`
+          SELECT Id, LoyaltyTierId, LoyaltyTier.Name, LoyaltyTier.SequenceNumber,
+                 Status, EffectiveDate, TierExpirationDate,
+                 LoyaltyTierGroupId, LoyaltyTierGroup.Name
+          FROM LoyaltyMemberTier
+          WHERE LoyaltyMemberId = '${memberId}'
+          AND Status = 'Active'
+          ORDER BY EffectiveDate DESC
+          LIMIT 1
+        `);
+        
+        console.log(`[TIER] Query returned ${tierResult.totalSize} records`);
+        
+        if (tierResult.totalSize > 0) {
+          const tierData = tierResult.records[0];
+          console.log(`[TIER] Found active tier:`, JSON.stringify(tierData, null, 2));
+          
+          tier = {
+            name: tierData.LoyaltyTier?.Name || tierData.LoyaltyTierGroup?.Name || 'Member',
+            level: tierData.LoyaltyTier?.SequenceNumber || 1,
+            expirationDate: tierData.TierExpirationDate
+          };
+          
+          console.log(`[TIER] Returning tier: ${tier.name} (Level: ${tier.level})`);
+        } else {
+          console.log(`[TIER] No active tier found for member ${memberId}`);
+          tier = { name: 'Standard', level: 1 };
         }
-      }
-      
-      if (!tier) {
-        console.log('[TIER] No tier information available - using default');
+      } catch (tierError) {
+        console.log(`[TIER] Error fetching tier: ${tierError.message}`);
+        console.log('[TIER] Using default tier');
         tier = { name: 'Standard', level: 1 };
       }
 
