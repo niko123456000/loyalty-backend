@@ -101,6 +101,121 @@ router.post('/login', async (req, res, next) => {
 });
 
 /**
+ * POST /api/auth/signup
+ * Create a new membership
+ */
+router.post('/signup', async (req, res, next) => {
+  try {
+    const { firstName, lastName, email, membershipNumber } = req.body;
+
+    // Validate required fields
+    if (!firstName || !lastName || !email) {
+      return res.status(400).json({ 
+        error: 'Missing required fields',
+        message: 'First name, last name, and email are required'
+      });
+    }
+
+    if (!membershipNumber) {
+      return res.status(400).json({ 
+        error: 'Membership number required',
+        message: 'Please provide a membership number'
+      });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ 
+        error: 'Invalid email format',
+        message: 'Please provide a valid email address'
+      });
+    }
+
+    // Check if JWT_SECRET is configured
+    if (!process.env.JWT_SECRET) {
+      console.error('JWT_SECRET environment variable is not set');
+      return res.status(500).json({ 
+        error: 'Server configuration error',
+        message: 'JWT_SECRET is not configured'
+      });
+    }
+
+    // Check if Salesforce is connected
+    if (!salesforceService.isConnected()) {
+      console.error('Salesforce is not connected');
+      return res.status(503).json({ 
+        error: 'Service unavailable',
+        message: 'Salesforce connection is not available. Please try again later.'
+      });
+    }
+
+    console.log('Signup attempt:', { firstName, lastName, email, membershipNumber });
+
+    // Check if membership number already exists
+    const existingMember = await salesforceService.findMemberByNumber(membershipNumber);
+    if (existingMember) {
+      return res.status(409).json({ 
+        error: 'Membership number already exists',
+        message: `Membership number ${membershipNumber} is already taken. Please choose a different number.`
+      });
+    }
+
+    // Find or create contact
+    const contact = await salesforceService.findOrCreateContact(email, firstName, lastName);
+
+    // Create loyalty program member
+    const member = await salesforceService.createLoyaltyMember(
+      membershipNumber,
+      contact.Id
+    );
+
+    // Generate JWT token
+    const token = jwt.sign(
+      {
+        memberId: member.Id,
+        membershipNumber: member.MembershipNumber,
+        contactId: member.ContactId,
+        programId: member.ProgramId
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    console.log('Signup successful for member:', member.MembershipNumber);
+
+    // Return token and member info
+    res.status(201).json({
+      token,
+      member: {
+        id: member.Id,
+        membershipNumber: member.MembershipNumber,
+        name: `${firstName} ${lastName}`,
+        email: email,
+        status: member.MemberStatus,
+        enrollmentDate: member.EnrollmentDate
+      },
+      message: 'Membership created successfully'
+    });
+  } catch (error) {
+    console.error('Signup error:', error);
+    console.error('Error stack:', error.stack);
+    
+    const errorMessage = error.message || 'Internal server error';
+    const statusCode = error.statusCode || 500;
+    
+    res.status(statusCode).json({
+      error: 'Signup failed',
+      message: errorMessage,
+      ...(process.env.NODE_ENV === 'development' && { 
+        stack: error.stack,
+        details: error 
+      })
+    });
+  }
+});
+
+/**
  * POST /api/auth/verify
  * Verify JWT token is valid
  */

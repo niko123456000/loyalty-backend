@@ -16,6 +16,36 @@ class SalesforceService {
   }
 
   /**
+   * Get OAuth redirect URI - use environment variable or detect from Heroku
+   */
+  getRedirectUri() {
+    // Use environment variable if set (highest priority)
+    if (process.env.OAUTH_REDIRECT_URI) {
+      return process.env.OAUTH_REDIRECT_URI;
+    }
+    
+    // Always use Heroku URL for OAuth (even when running locally)
+    // OAuth callbacks must go to the deployed Heroku app
+    const appName = process.env.HEROKU_APP_NAME || 'loyalty-backend-demo-714241525c2e';
+    return `https://${appName}.herokuapp.com/oauth/callback`;
+  }
+
+  /**
+   * Get OAuth login URL - use environment variable or detect from Heroku
+   */
+  getOAuthLoginUrl() {
+    // Use environment variable if set (highest priority)
+    if (process.env.OAUTH_LOGIN_URL) {
+      return process.env.OAUTH_LOGIN_URL;
+    }
+    
+    // Always use Heroku URL for OAuth (even when running locally)
+    // OAuth callbacks must go to the deployed Heroku app
+    const appName = process.env.HEROKU_APP_NAME || 'loyalty-backend-demo-714241525c2e';
+    return `https://${appName}.herokuapp.com/oauth/login`;
+  }
+
+  /**
    * Load saved tokens from file
    */
   loadTokens() {
@@ -69,7 +99,7 @@ class SalesforceService {
           oauth2: {
             clientId: process.env.SF_CLIENT_ID,
             clientSecret: process.env.SF_CLIENT_SECRET,
-            redirectUri: 'http://localhost:3000/oauth/callback',
+            redirectUri: this.getRedirectUri(),
             loginUrl: process.env.SF_LOGIN_URL
           }
         });
@@ -99,12 +129,13 @@ class SalesforceService {
       }
 
       // If we get here, we need manual authorization
+      const oauthLoginUrl = this.getOAuthLoginUrl();
       console.log('\n' + '='.repeat(60));
       console.log('⚠️  MANUAL AUTHORIZATION REQUIRED');
       console.log('='.repeat(60));
       console.log('\nNo valid Salesforce credentials found.');
       console.log('\nTo authorize the backend, open this URL in your browser:');
-      console.log('\n  👉  http://localhost:3000/oauth/login\n');
+      console.log(`\n  👉  ${oauthLoginUrl}\n`);
       console.log('This will redirect you to Salesforce to authorize the app.');
       console.log('='.repeat(60) + '\n');
 
@@ -229,7 +260,7 @@ class SalesforceService {
         oauth2: {
           clientId: process.env.SF_CLIENT_ID,
           clientSecret: process.env.SF_CLIENT_SECRET,
-          redirectUri: 'http://localhost:3000/oauth/callback',
+          redirectUri: this.getRedirectUri(),
           loginUrl: process.env.SF_LOGIN_URL
         }
       });
@@ -295,6 +326,112 @@ class SalesforceService {
     } catch (error) {
       console.error('Error finding member:', error);
       console.error('Error details:', JSON.stringify(error, null, 2));
+      throw error;
+    }
+  }
+
+  /**
+   * Get Loyalty Program ID by name
+   */
+  async getLoyaltyProgramId(programName = null) {
+    const conn = await this.ensureConnection();
+    
+    try {
+      const name = programName || process.env.LOYALTY_PROGRAM_NAME || 'Cirrus Loyalty';
+      const query = `SELECT Id, Name FROM LoyaltyProgram WHERE Name = '${name.replace(/'/g, "\\'")}' LIMIT 1`;
+      const result = await conn.query(query);
+      
+      if (result.totalSize === 0) {
+        throw new Error(`Loyalty Program "${name}" not found`);
+      }
+      
+      return result.records[0].Id;
+    } catch (error) {
+      console.error('Error finding loyalty program:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create or find a Contact by email
+   */
+  async findOrCreateContact(email, firstName, lastName) {
+    const conn = await this.ensureConnection();
+    
+    try {
+      // First, try to find existing contact
+      const query = `SELECT Id, Name, Email FROM Contact WHERE Email = '${email.replace(/'/g, "\\'")}' LIMIT 1`;
+      const result = await conn.query(query);
+      
+      if (result.totalSize > 0) {
+        console.log('Found existing contact:', result.records[0].Email);
+        return result.records[0];
+      }
+      
+      // Create new contact
+      const contactData = {
+        FirstName: firstName,
+        LastName: lastName,
+        Email: email
+      };
+      
+      const contact = await conn.sobject('Contact').create(contactData);
+      console.log('Created new contact:', contact.id);
+      
+      // Retrieve the created contact
+      const newContact = await conn.sobject('Contact').retrieve(contact.id);
+      return newContact;
+    } catch (error) {
+      console.error('Error creating/finding contact:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create a new Loyalty Program Member
+   */
+  async createLoyaltyMember(membershipNumber, contactId, programId = null) {
+    const conn = await this.ensureConnection();
+    
+    try {
+      // Get program ID if not provided
+      if (!programId) {
+        programId = await this.getLoyaltyProgramId();
+      }
+      
+      // Check if membership number already exists
+      const existingMember = await this.findMemberByNumber(membershipNumber);
+      if (existingMember) {
+        throw new Error(`Membership number ${membershipNumber} already exists`);
+      }
+      
+      // Create the loyalty program member
+      const memberData = {
+        ProgramId: programId,
+        ContactId: contactId,
+        MembershipNumber: membershipNumber,
+        MemberStatus: 'Active',
+        EnrollmentDate: new Date().toISOString().split('T')[0], // Today's date in YYYY-MM-DD format
+        EnrollmentChannel: 'Web'
+      };
+      
+      console.log('Creating loyalty member with data:', memberData);
+      const result = await conn.sobject('LoyaltyProgramMember').create(memberData);
+      
+      if (!result.success) {
+        const errorMsg = result.errors 
+          ? result.errors.map(e => `${e.statusCode}: ${e.message}`).join(', ')
+          : 'Unknown error';
+        throw new Error(`Failed to create member: ${errorMsg}`);
+      }
+      
+      console.log('Created loyalty member:', result.id);
+      
+      // Retrieve the created member
+      const newMember = await conn.sobject('LoyaltyProgramMember').retrieve(result.id);
+      return newMember;
+    } catch (error) {
+      console.error('Error creating loyalty member:', error);
       throw error;
     }
   }
