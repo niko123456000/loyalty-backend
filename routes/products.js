@@ -3,6 +3,20 @@ const { authenticate } = require('../middleware/auth');
 
 const router = express.Router();
 
+// Helper function to generate SVG placeholder images
+function generatePlaceholderSVG(text, bgColor, textColor = 'FFFFFF') {
+  const svg = `<svg width="300" height="300" xmlns="http://www.w3.org/2000/svg"><rect width="300" height="300" fill="#${bgColor}"/><text x="50%" y="50%" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="#${textColor}" text-anchor="middle" dominant-baseline="middle">${text}</text></svg>`;
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+}
+
+// Category color mapping
+const categoryColors = {
+  'Beverages': { bg: '4A90E2', text: 'FFFFFF' },
+  'Snacks': { bg: 'F5A623', text: 'FFFFFF' },
+  'Wellness': { bg: '7ED321', text: 'FFFFFF' },
+  'Accessories': { bg: '9013FE', text: 'FFFFFF' },
+};
+
 // Expanded product catalog with more variety
 const PRODUCTS = [
   // Beverages
@@ -12,7 +26,7 @@ const PRODUCTS = [
     description: 'Artisan roasted coffee beans from Colombia',
     price: 24.99,
     category: 'Beverages',
-    imageUrl: 'https://via.placeholder.com/300/8B4513/FFFFFF?text=Coffee',
+    imageUrl: generatePlaceholderSVG('Coffee', categoryColors.Beverages.bg, categoryColors.Beverages.text),
     inStock: true
   },
   {
@@ -21,7 +35,7 @@ const PRODUCTS = [
     description: 'Collection of premium organic teas (12 varieties)',
     price: 34.99,
     category: 'Beverages',
-    imageUrl: 'https://via.placeholder.com/300/228B22/FFFFFF?text=Tea',
+    imageUrl: generatePlaceholderSVG('Tea', categoryColors.Beverages.bg, categoryColors.Beverages.text),
     inStock: true
   },
   {
@@ -30,7 +44,7 @@ const PRODUCTS = [
     description: 'Natural energy boost drink with vitamins',
     price: 4.99,
     category: 'Beverages',
-    imageUrl: 'https://via.placeholder.com/300/4169E1/FFFFFF?text=Energy',
+    imageUrl: generatePlaceholderSVG('Energy', categoryColors.Beverages.bg, categoryColors.Beverages.text),
     inStock: true
   },
   {
@@ -39,7 +53,7 @@ const PRODUCTS = [
     description: 'Naturally flavored sparkling water (12-pack)',
     price: 2.99,
     category: 'Beverages',
-    imageUrl: 'https://via.placeholder.com/300/00CED1/FFFFFF?text=Water',
+    imageUrl: generatePlaceholderSVG('Water', categoryColors.Beverages.bg, categoryColors.Beverages.text),
     inStock: true
   },
   {
@@ -48,7 +62,7 @@ const PRODUCTS = [
     description: 'Smooth cold brew concentrate (32oz)',
     price: 18.99,
     category: 'Beverages',
-    imageUrl: 'https://via.placeholder.com/300/654321/FFFFFF?text=Cold+Brew',
+    imageUrl: generatePlaceholderSVG('Cold Brew', categoryColors.Beverages.bg, categoryColors.Beverages.text),
     inStock: true
   },
   {
@@ -57,7 +71,7 @@ const PRODUCTS = [
     description: 'Premium ceremonial grade matcha powder',
     price: 29.99,
     category: 'Beverages',
-    imageUrl: 'https://via.placeholder.com/300/90EE90/FFFFFF?text=Matcha',
+    imageUrl: generatePlaceholderSVG('Matcha', categoryColors.Beverages.bg, categoryColors.Beverages.text),
     inStock: true
   },
   {
@@ -66,7 +80,7 @@ const PRODUCTS = [
     description: 'Probiotic fermented tea drink',
     price: 5.99,
     category: 'Beverages',
-    imageUrl: 'https://via.placeholder.com/300/FF6347/FFFFFF?text=Kombucha',
+    imageUrl: generatePlaceholderSVG('Kombucha', categoryColors.Beverages.bg, categoryColors.Beverages.text),
     inStock: true
   },
   
@@ -77,7 +91,7 @@ const PRODUCTS = [
     description: 'Handcrafted artisan chocolates (16 pieces)',
     price: 19.99,
     category: 'Snacks',
-    imageUrl: 'https://via.placeholder.com/300/8B4513/FFFFFF?text=Chocolate',
+    imageUrl: generatePlaceholderSVG('Chocolate', categoryColors.Snacks.bg, categoryColors.Snacks.text),
     inStock: true
   },
   {
@@ -86,7 +100,7 @@ const PRODUCTS = [
     description: 'Healthy mixed nuts and dried fruits (1lb)',
     price: 12.99,
     category: 'Snacks',
-    imageUrl: 'https://via.placeholder.com/300/DAA520/FFFFFF?text=Trail+Mix',
+    imageUrl: generatePlaceholderSVG('Trail Mix', categoryColors.Snacks.bg, categoryColors.Snacks.text),
     inStock: true
   },
   {
@@ -95,7 +109,7 @@ const PRODUCTS = [
     description: 'High protein snack bar (12-pack)',
     price: 3.99,
     category: 'Snacks',
-    imageUrl: 'https://via.placeholder.com/300/CD853F/FFFFFF?text=Protein',
+    imageUrl: generatePlaceholderSVG('Protein', categoryColors.Snacks.bg, categoryColors.Snacks.text),
     inStock: true
   },
   {
@@ -104,7 +118,7 @@ const PRODUCTS = [
     description: 'Organic crunchy granola (16oz)',
     price: 8.99,
     category: 'Snacks',
-    imageUrl: 'https://via.placeholder.com/300/D2691E/FFFFFF?text=Granola',
+    imageUrl: generatePlaceholderSVG('Granola', categoryColors.Snacks.bg, categoryColors.Snacks.text),
     inStock: true
   },
   {
@@ -113,7 +127,7 @@ const PRODUCTS = [
     description: 'Crispy baked kale chips (4oz)',
     price: 6.99,
     category: 'Snacks',
-    imageUrl: 'https://via.placeholder.com/300/32CD32/FFFFFF?text=Kale+Chips',
+    imageUrl: generatePlaceholderSVG('Kale Chips', categoryColors.Snacks.bg, categoryColors.Snacks.text),
     inStock: true
   },
   {
@@ -122,7 +136,7 @@ const PRODUCTS = [
     description: 'Creamy organic almond butter (16oz)',
     price: 14.99,
     category: 'Snacks',
-    imageUrl: 'https://via.placeholder.com/300/DEB887/FFFFFF?text=Almond+Butter',
+    imageUrl: generatePlaceholderSVG('Almond Butter', categoryColors.Snacks.bg, categoryColors.Snacks.text),
     inStock: true
   },
   {
@@ -131,7 +145,7 @@ const PRODUCTS = [
     description: 'Whole grain rice cakes (12-pack)',
     price: 4.99,
     category: 'Snacks',
-    imageUrl: 'https://via.placeholder.com/300/F5DEB3/FFFFFF?text=Rice+Cakes',
+    imageUrl: generatePlaceholderSVG('Rice Cakes', categoryColors.Snacks.bg, categoryColors.Snacks.text),
     inStock: true
   },
   
@@ -142,7 +156,7 @@ const PRODUCTS = [
     description: 'High potency vitamin D3 supplements (60ct)',
     price: 16.99,
     category: 'Wellness',
-    imageUrl: 'https://via.placeholder.com/300/FFD700/FFFFFF?text=Vitamin+D',
+    imageUrl: generatePlaceholderSVG('Vitamin D', categoryColors.Wellness.bg, categoryColors.Wellness.text),
     inStock: true
   },
   {
@@ -151,7 +165,7 @@ const PRODUCTS = [
     description: 'Daily probiotic capsules (30ct)',
     price: 24.99,
     category: 'Wellness',
-    imageUrl: 'https://via.placeholder.com/300/98FB98/FFFFFF?text=Probiotics',
+    imageUrl: generatePlaceholderSVG('Probiotics', categoryColors.Wellness.bg, categoryColors.Wellness.text),
     inStock: true
   },
   {
@@ -160,7 +174,7 @@ const PRODUCTS = [
     description: 'High quality fish oil capsules (90ct)',
     price: 19.99,
     category: 'Wellness',
-    imageUrl: 'https://via.placeholder.com/300/4682B4/FFFFFF?text=Omega+3',
+    imageUrl: generatePlaceholderSVG('Omega 3', categoryColors.Wellness.bg, categoryColors.Wellness.text),
     inStock: true
   },
   {
@@ -169,7 +183,7 @@ const PRODUCTS = [
     description: 'Complete daily multivitamin (60ct)',
     price: 22.99,
     category: 'Wellness',
-    imageUrl: 'https://via.placeholder.com/300/FF69B4/FFFFFF?text=Multivitamin',
+    imageUrl: generatePlaceholderSVG('Multivitamin', categoryColors.Wellness.bg, categoryColors.Wellness.text),
     inStock: true
   },
   
@@ -180,7 +194,7 @@ const PRODUCTS = [
     description: 'Stainless steel insulated water bottle (32oz)',
     price: 29.99,
     category: 'Accessories',
-    imageUrl: 'https://via.placeholder.com/300/708090/FFFFFF?text=Water+Bottle',
+    imageUrl: generatePlaceholderSVG('Water Bottle', categoryColors.Accessories.bg, categoryColors.Accessories.text),
     inStock: true
   },
   {
@@ -189,7 +203,7 @@ const PRODUCTS = [
     description: 'Ceramic travel mug with lid',
     price: 15.99,
     category: 'Accessories',
-    imageUrl: 'https://via.placeholder.com/300/8B4513/FFFFFF?text=Coffee+Mug',
+    imageUrl: generatePlaceholderSVG('Coffee Mug', categoryColors.Accessories.bg, categoryColors.Accessories.text),
     inStock: true
   },
   {
@@ -198,7 +212,7 @@ const PRODUCTS = [
     description: 'Insulated lunch box with compartments',
     price: 24.99,
     category: 'Accessories',
-    imageUrl: 'https://via.placeholder.com/300/FF4500/FFFFFF?text=Lunch+Box',
+    imageUrl: generatePlaceholderSVG('Lunch Box', categoryColors.Accessories.bg, categoryColors.Accessories.text),
     inStock: true
   },
   {
@@ -207,7 +221,7 @@ const PRODUCTS = [
     description: 'Eco-friendly non-slip yoga mat',
     price: 39.99,
     category: 'Accessories',
-    imageUrl: 'https://via.placeholder.com/300/9370DB/FFFFFF?text=Yoga+Mat',
+    imageUrl: generatePlaceholderSVG('Yoga Mat', categoryColors.Accessories.bg, categoryColors.Accessories.text),
     inStock: true
   }
 ];
