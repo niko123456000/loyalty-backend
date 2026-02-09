@@ -88,6 +88,13 @@ router.post('/purchase', authenticate, async (req, res, next) => {
       console.log(`[VOUCHER] Voucher validated: ${voucher.name}`);
     }
 
+    // Calculate points earned (typically 1 point per dollar spent)
+    const pointsEarned = lineItems.reduce((total, item) => {
+      const itemTotal = item.price * (item.quantity || 1);
+      // Round to nearest integer (1 point per dollar)
+      return total + Math.round(itemTotal);
+    }, 0);
+
     // Process the purchase with voucher
     const result = await salesforceService.createTransactionJournal(
       membershipNumber,
@@ -99,6 +106,7 @@ router.post('/purchase', authenticate, async (req, res, next) => {
       success: true,
       message: voucherCode ? 'Purchase processed and voucher redeemed successfully' : 'Purchase processed successfully',
       voucherRedeemed: !!voucherCode,
+      pointsEarned: pointsEarned,
       result
     });
   } catch (error) {
