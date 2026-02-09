@@ -549,6 +549,24 @@ class SalesforceService {
         tier = { name: 'Standard', level: 1 };
       }
 
+      // Get contact details for profile information
+      let contactEmail = null;
+      let contactPhone = null;
+      let contactName = null;
+      
+      if (member.ContactId) {
+        try {
+          const contact = await conn.sobject('Contact').retrieve(member.ContactId, {
+            fields: ['Email', 'Phone', 'Name', 'MailingStreet', 'MailingCity', 'MailingState', 'MailingPostalCode', 'MailingCountry']
+          });
+          contactEmail = contact.Email;
+          contactPhone = contact.Phone;
+          contactName = contact.Name;
+        } catch (contactError) {
+          console.log('[MEMBER] Could not retrieve contact details:', contactError.message);
+        }
+      }
+
       return {
         memberId: member.Id,
         membershipNumber: member.MembershipNumber,
@@ -558,7 +576,11 @@ class SalesforceService {
         programId: member.ProgramId,
         pointsBalance: calculatedBalance, // Use calculated balance from ledger entries
         lastAccrualDate: currency ? currency.LastAccrualProcessedDate : null,
-        tier: tier
+        tier: tier,
+        // Include contact information for profile streams
+        email: contactEmail,
+        phone: contactPhone,
+        name: contactName
       };
     } catch (error) {
       console.error('Error getting member profile:', error);
