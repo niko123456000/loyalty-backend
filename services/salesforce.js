@@ -593,17 +593,55 @@ class SalesforceService {
         payload
       );
 
-      console.log('Transaction result:', result);
+      console.log('Transaction result:', JSON.stringify(result, null, 2));
       
-      // If voucher was used, redeem it
+      // Extract transaction journal ID - check multiple possible field names
+      const transactionJournalId = result.transactionJournalId || 
+                                   result.transactionJournal?.Id || 
+                                   result.id || 
+                                   result.Id ||
+                                   result.journalId;
+      
+      console.log(`[TRANSACTION] TransactionJournalId: ${transactionJournalId || 'NOT FOUND'}`);
+      console.log(`[TRANSACTION] Result keys:`, Object.keys(result));
+      
+      // If voucher was used, redeem it and link both ways
       if (voucherCode && result.success) {
-        try {
-          await this.redeemVoucher(membershipNumber, voucherCode, result.transactionJournalId);
-          console.log(`[VOUCHER] Successfully redeemed voucher: ${voucherCode}`);
-        } catch (voucherError) {
-          console.error(`[VOUCHER] Failed to redeem voucher ${voucherCode}:`, voucherError.message);
-          // Don't fail the whole transaction if voucher redemption fails
+        if (!transactionJournalId) {
+          console.error(`[VOUCHER] WARNING: Transaction succeeded but no TransactionJournalId returned. Result:`, result);
+        } else {
+          try {
+            // First, update the Transaction Journal to include the VoucherCode
+            console.log(`[TRANSACTION] Updating Transaction Journal ${transactionJournalId} with VoucherCode: ${voucherCode}`);
+            try {
+              const tjUpdateResult = await conn.sobject('TransactionJournal').update({
+                Id: transactionJournalId,
+                VoucherCode: voucherCode
+              });
+              
+              if (Array.isArray(tjUpdateResult) && !tjUpdateResult[0]?.success) {
+                console.warn(`[TRANSACTION] Failed to update Transaction Journal VoucherCode:`, tjUpdateResult[0]?.errors);
+              } else {
+                console.log(`[TRANSACTION] ✅ Successfully set VoucherCode on Transaction Journal`);
+              }
+            } catch (tjError) {
+              console.warn(`[TRANSACTION] Could not update Transaction Journal VoucherCode (may not have permission):`, tjError.message);
+            }
+            
+            // Then redeem the voucher and link it to the Transaction Journal
+            await this.redeemVoucher(membershipNumber, voucherCode, transactionJournalId);
+            console.log(`[VOUCHER] Successfully redeemed voucher: ${voucherCode} and linked to TransactionJournal: ${transactionJournalId}`);
+          } catch (voucherError) {
+            console.error(`[VOUCHER] Failed to redeem voucher ${voucherCode}:`, voucherError.message);
+            console.error(`[VOUCHER] Error details:`, voucherError);
+            // Don't fail the whole transaction if voucher redemption fails, but log it clearly
+          }
         }
+      }
+      
+      // Ensure transactionJournalId is in the result
+      if (transactionJournalId && !result.transactionJournalId) {
+        result.transactionJournalId = transactionJournalId;
       }
       
       return result;
@@ -628,17 +666,32 @@ class SalesforceService {
         throw new Error(`Member not found: ${membershipNumber}`);
       }
       
+      // Query voucher - check multiple status values to be more flexible
       const voucherResult = await conn.query(`
-        SELECT Id, Status, FaceValue, RedeemedValue, RemainingValue
+        SELECT Id, Status, FaceValue, RedeemedValue, RemainingValue, VoucherCode
         FROM Voucher
         WHERE VoucherCode = '${voucherCode.replace(/'/g, "\\'")}'
         AND LoyaltyProgramMemberId = '${member.Id}'
-        AND Status = 'Issued'
+        AND (Status = 'Issued' OR Status = 'Available' OR Status = 'Active')
         LIMIT 1
       `);
       
       if (voucherResult.totalSize === 0) {
-        throw new Error(`Voucher ${voucherCode} not found or already redeemed`);
+        // Try without status filter to see what status it actually has
+        const checkResult = await conn.query(`
+          SELECT Id, Status, VoucherCode
+          FROM Voucher
+          WHERE VoucherCode = '${voucherCode.replace(/'/g, "\\'")}'
+          AND LoyaltyProgramMemberId = '${member.Id}'
+          LIMIT 1
+        `);
+        
+        if (checkResult.totalSize > 0) {
+          const foundVoucher = checkResult.records[0];
+          throw new Error(`Voucher ${voucherCode} found but has status '${foundVoucher.Status}' (expected: Issued, Available, or Active)`);
+        } else {
+          throw new Error(`Voucher ${voucherCode} not found for member ${membershipNumber}`);
+        }
       }
       
       const voucher = voucherResult.records[0];
@@ -653,14 +706,50 @@ class SalesforceService {
       // Link to transaction journal if provided
       if (transactionJournalId) {
         updateData.TransactionJournalId = transactionJournalId;
+        console.log(`[VOUCHER] Linking voucher ${voucher.Id} to TransactionJournal: ${transactionJournalId}`);
+      } else {
+        console.warn(`[VOUCHER] No TransactionJournalId provided - voucher will not be linked to transaction`);
       }
       
-      await conn.sobject('Voucher').update({
-        Id: voucher.Id,
-        ...updateData
-      });
+      console.log(`[VOUCHER] Updating voucher ${voucher.Id} (Code: ${voucherCode}) with data:`, JSON.stringify(updateData, null, 2));
       
-      console.log(`[VOUCHER] Voucher ${voucherCode} marked as Redeemed`);
+      try {
+        const updateResult = await conn.sobject('Voucher').update({
+          Id: voucher.Id,
+          ...updateData
+        });
+        
+        // jsforce update returns the result directly, check for errors
+        if (Array.isArray(updateResult)) {
+          const result = updateResult[0];
+          if (!result.success) {
+            const errorMsg = result.errors 
+              ? result.errors.map(e => `${e.statusCode}: ${e.message} (${e.fields?.join(', ') || ''})`).join(', ')
+              : 'Unknown error';
+            throw new Error(`Failed to update voucher: ${errorMsg}`);
+          }
+          console.log(`[VOUCHER] Voucher update successful. Result:`, result);
+        } else if (updateResult.success === false) {
+          const errorMsg = updateResult.errors 
+            ? updateResult.errors.map(e => `${e.statusCode}: ${e.message}`).join(', ')
+            : 'Unknown error';
+          throw new Error(`Failed to update voucher: ${errorMsg}`);
+        }
+        
+        // Verify the update by retrieving the voucher
+        const updatedVoucher = await conn.sobject('Voucher').retrieve(voucher.Id);
+        console.log(`[VOUCHER] Verified voucher update - Status: ${updatedVoucher.Status}, TransactionJournalId: ${updatedVoucher.TransactionJournalId || 'null'}`);
+        
+        if (transactionJournalId && updatedVoucher.TransactionJournalId !== transactionJournalId) {
+          console.error(`[VOUCHER] WARNING: Voucher TransactionJournalId mismatch! Expected: ${transactionJournalId}, Got: ${updatedVoucher.TransactionJournalId}`);
+        }
+        
+        console.log(`[VOUCHER] ✅ Voucher ${voucherCode} (ID: ${voucher.Id}) successfully marked as Redeemed and linked to TransactionJournal: ${updatedVoucher.TransactionJournalId || 'none'}`);
+      } catch (updateError) {
+        console.error(`[VOUCHER] Error updating voucher:`, updateError);
+        console.error(`[VOUCHER] Update data was:`, JSON.stringify(updateData, null, 2));
+        throw updateError;
+      }
       
       return {
         success: true,
