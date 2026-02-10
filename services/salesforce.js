@@ -707,7 +707,7 @@ class SalesforceService {
       
       // Check what currencies are associated with this member
       const memberCurrencies = await conn.query(`
-        SELECT Id, PointsBalance, LoyaltyProgramCurrencyId, 
+        SELECT Id, Name, PointsBalance, LoyaltyProgramCurrencyId, 
                LoyaltyProgramCurrency.Name, LoyaltyProgramCurrency.CurrencyIsoCode
         FROM LoyaltyMemberCurrency
         WHERE LoyaltyMemberId = '${member.Id}'
@@ -715,8 +715,15 @@ class SalesforceService {
       
       console.log(`[TRANSACTION] Member has ${memberCurrencies.totalSize} currency records:`);
       memberCurrencies.records.forEach((curr, idx) => {
-        console.log(`[TRANSACTION]   ${idx + 1}. ${curr.LoyaltyProgramCurrency?.Name || 'Unknown'} (ID: ${curr.LoyaltyProgramCurrencyId}, Balance: ${curr.PointsBalance})`);
+        console.log(`[TRANSACTION]   ${idx + 1}. ${curr.LoyaltyProgramCurrency?.Name || 'Unknown'} (ID: ${curr.LoyaltyProgramCurrencyId}, Balance: ${curr.PointsBalance}, Name: ${curr.Name || 'N/A'})`);
       });
+      
+      // Get Name format from existing record if available
+      let nameFormat = null;
+      if (memberCurrencies.records.length > 0 && memberCurrencies.records[0].Name) {
+        nameFormat = memberCurrencies.records[0].Name;
+        console.log(`[TRANSACTION] Existing currency Name format: "${nameFormat}"`);
+      }
       
       // Check program currencies
       const programCurrencies = await conn.query(`
@@ -739,13 +746,31 @@ class SalesforceService {
         
         for (const currency of missingCurrencies) {
           try {
+            // Build Name field - try to match existing format or use a pattern
+            // Common patterns: "{MemberNumber} - {CurrencyName}" or just "{CurrencyName}"
+            let currencyName = currency.Name;
+            if (nameFormat) {
+              // Try to extract pattern from existing name
+              // If existing format is like "1234 - Cirrus Bucks", use same pattern
+              if (nameFormat.includes(' - ')) {
+                currencyName = `${member.MembershipNumber} - ${currency.Name}`;
+              } else {
+                // Use currency name directly if existing records don't have member number
+                currencyName = currency.Name;
+              }
+            } else {
+              // Default pattern: "{MemberNumber} - {CurrencyName}"
+              currencyName = `${member.MembershipNumber} - ${currency.Name}`;
+            }
+            
             // Don't set PointsBalance - it may not be writable and should default to 0
             const newMemberCurrency = {
               LoyaltyMemberId: member.Id,
-              LoyaltyProgramCurrencyId: currency.Id
+              LoyaltyProgramCurrencyId: currency.Id,
+              Name: currencyName
             };
             
-            console.log(`[TRANSACTION] Creating missing currency record: ${currency.Name}`);
+            console.log(`[TRANSACTION] Creating missing currency record: ${currency.Name} with Name: "${currencyName}"`);
             const createResult = await conn.sobject('LoyaltyMemberCurrency').create(newMemberCurrency);
             
             if (createResult.success) {
