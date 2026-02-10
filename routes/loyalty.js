@@ -440,4 +440,62 @@ router.get('/diagnose/:membershipNumber', authenticate, async (req, res, next) =
   }
 });
 
+/**
+ * GET /api/loyalty/check-currencies/:membershipNumber
+ * Quick check of member's currency setup (simpler than diagnose)
+ */
+router.get('/check-currencies/:membershipNumber', authenticate, async (req, res, next) => {
+  try {
+    const membershipNumber = req.params.membershipNumber;
+    const member = await salesforceService.findMemberByNumber(membershipNumber);
+    
+    if (!member) {
+      return res.status(404).json({ error: 'Member not found' });
+    }
+    
+    const conn = await salesforceService.ensureConnection();
+    
+    // Get member currencies
+    const memberCurrencies = await conn.query(`
+      SELECT Id, PointsBalance, LoyaltyProgramCurrencyId, 
+             LoyaltyProgramCurrency.Name
+      FROM LoyaltyMemberCurrency
+      WHERE LoyaltyMemberId = '${member.Id}'
+    `);
+    
+    // Get program currencies
+    const programCurrencies = await conn.query(`
+      SELECT Id, Name
+      FROM LoyaltyProgramCurrency
+      WHERE LoyaltyProgramId = '${member.ProgramId}'
+    `);
+    
+    const memberCurrencyNames = memberCurrencies.records.map(c => c.LoyaltyProgramCurrency?.Name);
+    const programCurrencyNames = programCurrencies.records.map(c => c.Name);
+    
+    const hasCirrusBucks = memberCurrencyNames.includes('Cirrus Bucks');
+    const hasCirrusDiscountCoins = memberCurrencyNames.includes('Cirrus Discount Coins');
+    
+    const missingCurrencies = programCurrencyNames.filter(name => !memberCurrencyNames.includes(name));
+    
+    res.json({
+      membershipNumber,
+      memberId: member.Id,
+      programId: member.ProgramId,
+      memberCurrencies: memberCurrencyNames,
+      programCurrencies: programCurrencyNames,
+      hasCirrusBucks,
+      hasCirrusDiscountCoins,
+      missingCurrencies,
+      status: missingCurrencies.length === 0 ? 'OK' : 'MISSING_CURRENCIES',
+      message: missingCurrencies.length === 0 
+        ? 'Member has all required currencies'
+        : `Member is missing: ${missingCurrencies.join(', ')}`
+    });
+  } catch (error) {
+    console.error('[CHECK-CURRENCIES] Error:', error);
+    next(error);
+  }
+});
+
 module.exports = router;
