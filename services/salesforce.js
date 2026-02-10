@@ -697,21 +697,24 @@ class SalesforceService {
 
       console.log('Transaction result:', JSON.stringify(result, null, 2));
       
+      // Apex returns an array of responses, get the first one
+      const transactionResponse = Array.isArray(result) ? result[0] : result;
+      
       // Extract transaction journal ID - check multiple possible field names
-      const transactionJournalId = result.transactionJournalId || 
-                                   result.transactionJournal?.Id || 
-                                   result.transactionJournalId || 
-                                   result.id || 
-                                   result.Id ||
-                                   result.journalId ||
-                                   result.TransactionJournalId;
+      const transactionJournalId = transactionResponse?.transactionJournalId || 
+                                   transactionResponse?.transactionJournal?.Id || 
+                                   transactionResponse?.id || 
+                                   transactionResponse?.Id ||
+                                   transactionResponse?.journalId ||
+                                   transactionResponse?.TransactionJournalId;
       
       console.log(`[TRANSACTION] TransactionJournalId: ${transactionJournalId || 'NOT FOUND'}`);
-      console.log(`[TRANSACTION] Result keys:`, Object.keys(result));
+      console.log(`[TRANSACTION] Result keys:`, Array.isArray(result) ? `Array[${result.length}]` : Object.keys(result));
       console.log(`[TRANSACTION] Full result structure:`, JSON.stringify(result, null, 2));
       
       // Check if transaction was successful (handle both success field and absence of error)
-      const isSuccess = result.success !== false && !result.error && !result.errors;
+      const isSuccess = transactionResponse?.status === 'Success' || 
+                       (transactionResponse?.success !== false && !transactionResponse?.error && !transactionResponse?.errors);
       
       // If we don't have a TransactionJournalId but transaction succeeded, try to find it
       let finalTransactionJournalId = transactionJournalId;
