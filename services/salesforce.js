@@ -353,6 +353,38 @@ class SalesforceService {
   }
 
   /**
+   * Get Loyalty Program Currency ID by name
+   */
+  async getLoyaltyProgramCurrencyId(currencyName, programId = null) {
+    const conn = await this.ensureConnection();
+    
+    try {
+      if (!programId) {
+        programId = await this.getLoyaltyProgramId();
+      }
+      
+      const query = `
+        SELECT Id, Name 
+        FROM LoyaltyProgramCurrency 
+        WHERE LoyaltyProgramId = '${programId}' 
+        AND Name = '${currencyName.replace(/'/g, "\\'")}' 
+        LIMIT 1
+      `;
+      const result = await conn.query(query);
+      
+      if (result.totalSize === 0) {
+        console.warn(`Loyalty Program Currency "${currencyName}" not found for program ${programId}`);
+        return null;
+      }
+      
+      return result.records[0].Id;
+    } catch (error) {
+      console.error('Error finding loyalty program currency:', error);
+      return null;
+    }
+  }
+
+  /**
    * Create or find a Contact by email
    */
   async findOrCreateContact(email, firstName, lastName) {
@@ -448,16 +480,26 @@ class SalesforceService {
       
       console.log('[MEMBER] Member fields:', Object.keys(member));
       
-      // Get member currency (points balance)
+      // Get member currencies (points balance and coins balance)
       const currencyResult = await conn.query(`
         SELECT Id, PointsBalance, LoyaltyProgramCurrencyId, 
-               LastAccrualProcessedDate, LastExpirationProcessRunDate
+               LastAccrualProcessedDate, LastExpirationProcessRunDate,
+               LoyaltyProgramCurrency.Name, LoyaltyProgramCurrency.CurrencyIsoCode
         FROM LoyaltyMemberCurrency
         WHERE LoyaltyMemberId = '${memberId}'
-        LIMIT 1
       `);
 
-      const currency = currencyResult.records[0];
+      // Find the primary currency (Cirrus Bucks) and coins currency (Cirrus Discount Coins)
+      const primaryCurrency = currencyResult.records.find(c => 
+        c.LoyaltyProgramCurrency?.Name === 'Cirrus Bucks' || 
+        c.LoyaltyProgramCurrency?.Name === (process.env.LOYALTY_CURRENCY_NAME || 'Cirrus Bucks')
+      ) || currencyResult.records[0];
+      
+      const coinsCurrency = currencyResult.records.find(c => 
+        c.LoyaltyProgramCurrency?.Name === 'Cirrus Discount Coins'
+      );
+
+      const currency = primaryCurrency;
       
       // Calculate balance from ledger entries if PointsBalance is 0 or outdated
       // This provides immediate balance updates even if scheduled process hasn't run
@@ -567,6 +609,40 @@ class SalesforceService {
         }
       }
 
+      // Calculate coins balance if coins currency exists
+      let coinsBalance = 0;
+      if (coinsCurrency && coinsCurrency.LoyaltyProgramCurrencyId) {
+        try {
+          const coinsCreditsResult = await conn.query(`
+            SELECT SUM(Points) totalCoins
+            FROM LoyaltyLedger
+            WHERE LoyaltyProgramMemberId = '${memberId}'
+            AND LoyaltyProgramCurrencyId = '${coinsCurrency.LoyaltyProgramCurrencyId}'
+            AND EventType = 'Credit'
+          `);
+          
+          const coinsDebitsResult = await conn.query(`
+            SELECT SUM(Points) totalCoins
+            FROM LoyaltyLedger
+            WHERE LoyaltyProgramMemberId = '${memberId}'
+            AND LoyaltyProgramCurrencyId = '${coinsCurrency.LoyaltyProgramCurrencyId}'
+            AND EventType = 'Debit'
+          `);
+          
+          const coinsCredits = coinsCreditsResult.records[0]?.totalCoins || 0;
+          const coinsDebits = coinsDebitsResult.records[0]?.totalCoins || 0;
+          coinsBalance = coinsCredits - coinsDebits;
+          
+          // Use PointsBalance if calculated balance is 0 and PointsBalance exists
+          if (coinsBalance === 0 && coinsCurrency.PointsBalance) {
+            coinsBalance = coinsCurrency.PointsBalance;
+          }
+        } catch (coinsError) {
+          console.log('[MEMBER] Could not calculate coins balance:', coinsError.message);
+          coinsBalance = coinsCurrency.PointsBalance || 0;
+        }
+      }
+
       return {
         memberId: member.Id,
         membershipNumber: member.MembershipNumber,
@@ -575,6 +651,7 @@ class SalesforceService {
         contactId: member.ContactId,
         programId: member.ProgramId,
         pointsBalance: calculatedBalance, // Use calculated balance from ledger entries
+        coinsBalance: coinsBalance, // Cirrus Discount Coins balance
         lastAccrualDate: currency ? currency.LastAccrualProcessedDate : null,
         tier: tier,
         // Include contact information for profile streams
@@ -591,7 +668,7 @@ class SalesforceService {
   /**
    * Create transaction journal via Apex REST endpoint
    */
-  async createTransactionJournal(membershipNumber, lineItems, voucherCode = null) {
+  async createTransactionJournal(membershipNumber, lineItems, voucherCode = null, coinsEarned = null) {
     const conn = await this.ensureConnection();
     
     try {
@@ -608,6 +685,9 @@ class SalesforceService {
       console.log('Creating transaction:', payload);
       if (voucherCode) {
         console.log('Transaction includes voucher:', voucherCode);
+      }
+      if (coinsEarned !== null) {
+        console.log(`[COINS] Coins to be awarded: ${coinsEarned}`);
       }
 
       const result = await conn.apex.post(
@@ -705,6 +785,53 @@ class SalesforceService {
       const resultTjId = finalTransactionJournalId || transactionJournalId;
       if (resultTjId && !result.transactionJournalId) {
         result.transactionJournalId = resultTjId;
+      }
+      
+      // Award Cirrus Discount Coins if coinsEarned is provided
+      if (coinsEarned !== null && coinsEarned > 0 && isSuccess && resultTjId) {
+        try {
+          console.log(`[COINS] Awarding ${coinsEarned} Cirrus Discount Coins`);
+          
+          // Get member and program currency ID for coins
+          const member = await this.findMemberByNumber(membershipNumber);
+          if (!member) {
+            throw new Error(`Member not found: ${membershipNumber}`);
+          }
+          
+          const programId = member.ProgramId;
+          const coinsCurrencyId = await this.getLoyaltyProgramCurrencyId('Cirrus Discount Coins', programId);
+          
+          if (!coinsCurrencyId) {
+            console.warn(`[COINS] Cirrus Discount Coins currency not found - skipping coins award`);
+          } else {
+            // Create a LoyaltyLedger entry for coins
+            const ledgerEntry = {
+              LoyaltyProgramMemberId: member.Id,
+              LoyaltyProgramCurrencyId: coinsCurrencyId,
+              Points: coinsEarned,
+              EventType: 'Credit',
+              TransactionJournalId: resultTjId,
+              ActivityDate: new Date().toISOString().split('T')[0],
+              JournalDate: new Date().toISOString().split('T')[0]
+            };
+            
+            console.log(`[COINS] Creating ledger entry:`, JSON.stringify(ledgerEntry, null, 2));
+            
+            const ledgerResult = await conn.sobject('LoyaltyLedger').create(ledgerEntry);
+            
+            if (ledgerResult.success) {
+              console.log(`[COINS] ✅ Successfully awarded ${coinsEarned} Cirrus Discount Coins (Ledger ID: ${ledgerResult.id})`);
+            } else {
+              const errorMsg = ledgerResult.errors 
+                ? ledgerResult.errors.map(e => `${e.statusCode}: ${e.message}`).join(', ')
+                : 'Unknown error';
+              console.error(`[COINS] ❌ Failed to create coins ledger entry: ${errorMsg}`);
+            }
+          }
+        } catch (coinsError) {
+          console.error(`[COINS] ❌ Error awarding coins:`, coinsError.message);
+          // Don't fail the transaction if coins award fails
+        }
       }
       
       return result;

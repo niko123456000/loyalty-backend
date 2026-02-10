@@ -95,11 +95,18 @@ router.post('/purchase', authenticate, async (req, res, next) => {
       return total + Math.round(itemTotal);
     }, 0);
 
+    // Calculate coins earned (equal to transaction total amount)
+    const transactionTotal = lineItems.reduce((total, item) => {
+      return total + (item.price * (item.quantity || 1));
+    }, 0);
+    const coinsEarned = transactionTotal; // Coins = exact transaction total
+
     // Process the purchase with voucher
     const result = await salesforceService.createTransactionJournal(
       membershipNumber,
       lineItems,
-      voucherCode
+      voucherCode,
+      coinsEarned // Pass coins earned to transaction creation
     );
 
     res.json({
@@ -107,6 +114,7 @@ router.post('/purchase', authenticate, async (req, res, next) => {
       message: voucherCode ? 'Purchase processed and voucher redeemed successfully' : 'Purchase processed successfully',
       voucherRedeemed: !!voucherCode,
       pointsEarned: pointsEarned,
+      coinsEarned: coinsEarned,
       result
     });
   } catch (error) {
