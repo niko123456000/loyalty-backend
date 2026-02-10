@@ -726,6 +726,38 @@ class SalesforceService {
         programCurrencies.records.forEach((curr, idx) => {
           console.log(`[TRANSACTION]   ${idx + 1}. ${curr.Name} (ID: ${curr.Id})`);
         });
+        
+        // Auto-create missing currency records
+        const memberCurrencyIds = new Set(memberCurrencies.records.map(c => c.LoyaltyProgramCurrencyId));
+        const missingCurrencies = programCurrencies.records.filter(c => !memberCurrencyIds.has(c.Id));
+        
+        if (missingCurrencies.length > 0) {
+          console.log(`[TRANSACTION] ⚠️  Member is missing ${missingCurrencies.length} currency record(s), auto-creating...`);
+          
+          for (const currency of missingCurrencies) {
+            try {
+              const newMemberCurrency = {
+                LoyaltyMemberId: member.Id,
+                LoyaltyProgramCurrencyId: currency.Id,
+                PointsBalance: 0
+              };
+              
+              console.log(`[TRANSACTION] Creating missing currency record: ${currency.Name}`);
+              const createResult = await conn.sobject('LoyaltyMemberCurrency').create(newMemberCurrency);
+              
+              if (createResult.success) {
+                console.log(`[TRANSACTION] ✅ Successfully created ${currency.Name} currency record (ID: ${createResult.id})`);
+              } else {
+                const errorMsg = createResult.errors 
+                  ? createResult.errors.map(e => `${e.statusCode}: ${e.message}`).join(', ')
+                  : 'Unknown error';
+                console.error(`[TRANSACTION] ❌ Failed to create ${currency.Name} currency record: ${errorMsg}`);
+              }
+            } catch (createError) {
+              console.error(`[TRANSACTION] ❌ Error creating ${currency.Name} currency record:`, createError.message);
+            }
+          }
+        }
       }
       
       if (voucherCode) {
