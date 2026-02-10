@@ -697,67 +697,74 @@ class SalesforceService {
       console.log('Creating transaction:', payload);
       console.log(`[TRANSACTION] Member: ${membershipNumber}`);
       
-      // Check member's currency setup before creating transaction
+      // Check member's currency setup BEFORE creating transaction (Flow runs immediately)
       const member = await this.findMemberByNumber(membershipNumber);
-      if (member) {
-        console.log(`[TRANSACTION] Member ID: ${member.Id}, Program ID: ${member.ProgramId}`);
+      if (!member) {
+        throw new Error(`Member not found: ${membershipNumber}`);
+      }
+      
+      console.log(`[TRANSACTION] Member ID: ${member.Id}, Program ID: ${member.ProgramId}`);
+      
+      // Check what currencies are associated with this member
+      const memberCurrencies = await conn.query(`
+        SELECT Id, PointsBalance, LoyaltyProgramCurrencyId, 
+               LoyaltyProgramCurrency.Name, LoyaltyProgramCurrency.CurrencyIsoCode
+        FROM LoyaltyMemberCurrency
+        WHERE LoyaltyMemberId = '${member.Id}'
+      `);
+      
+      console.log(`[TRANSACTION] Member has ${memberCurrencies.totalSize} currency records:`);
+      memberCurrencies.records.forEach((curr, idx) => {
+        console.log(`[TRANSACTION]   ${idx + 1}. ${curr.LoyaltyProgramCurrency?.Name || 'Unknown'} (ID: ${curr.LoyaltyProgramCurrencyId}, Balance: ${curr.PointsBalance})`);
+      });
+      
+      // Check program currencies
+      const programCurrencies = await conn.query(`
+        SELECT Id, Name
+        FROM LoyaltyProgramCurrency
+        WHERE LoyaltyProgramId = '${member.ProgramId}'
+      `);
+      
+      console.log(`[TRANSACTION] Program has ${programCurrencies.totalSize} currencies:`);
+      programCurrencies.records.forEach((curr, idx) => {
+        console.log(`[TRANSACTION]   ${idx + 1}. ${curr.Name} (ID: ${curr.Id})`);
+      });
+      
+      // Auto-create missing currency records BEFORE creating transaction (Flow needs them)
+      const memberCurrencyIds = new Set(memberCurrencies.records.map(c => c.LoyaltyProgramCurrencyId));
+      const missingCurrencies = programCurrencies.records.filter(c => !memberCurrencyIds.has(c.Id));
+      
+      if (missingCurrencies.length > 0) {
+        console.log(`[TRANSACTION] ⚠️  Member is missing ${missingCurrencies.length} currency record(s), auto-creating BEFORE transaction...`);
         
-        // Check what currencies are associated with this member
-        const memberCurrencies = await conn.query(`
-          SELECT Id, PointsBalance, LoyaltyProgramCurrencyId, 
-                 LoyaltyProgramCurrency.Name, LoyaltyProgramCurrency.CurrencyIsoCode
-          FROM LoyaltyMemberCurrency
-          WHERE LoyaltyMemberId = '${member.Id}'
-        `);
-        
-        console.log(`[TRANSACTION] Member has ${memberCurrencies.totalSize} currency records:`);
-        memberCurrencies.records.forEach((curr, idx) => {
-          console.log(`[TRANSACTION]   ${idx + 1}. ${curr.LoyaltyProgramCurrency?.Name || 'Unknown'} (ID: ${curr.LoyaltyProgramCurrencyId}, Balance: ${curr.PointsBalance})`);
-        });
-        
-        // Check program currencies
-        const programCurrencies = await conn.query(`
-          SELECT Id, Name
-          FROM LoyaltyProgramCurrency
-          WHERE LoyaltyProgramId = '${member.ProgramId}'
-        `);
-        
-        console.log(`[TRANSACTION] Program has ${programCurrencies.totalSize} currencies:`);
-        programCurrencies.records.forEach((curr, idx) => {
-          console.log(`[TRANSACTION]   ${idx + 1}. ${curr.Name} (ID: ${curr.Id})`);
-        });
-        
-        // Auto-create missing currency records
-        const memberCurrencyIds = new Set(memberCurrencies.records.map(c => c.LoyaltyProgramCurrencyId));
-        const missingCurrencies = programCurrencies.records.filter(c => !memberCurrencyIds.has(c.Id));
-        
-        if (missingCurrencies.length > 0) {
-          console.log(`[TRANSACTION] ⚠️  Member is missing ${missingCurrencies.length} currency record(s), auto-creating...`);
-          
-          for (const currency of missingCurrencies) {
-            try {
-              const newMemberCurrency = {
-                LoyaltyMemberId: member.Id,
-                LoyaltyProgramCurrencyId: currency.Id,
-                PointsBalance: 0
-              };
-              
-              console.log(`[TRANSACTION] Creating missing currency record: ${currency.Name}`);
-              const createResult = await conn.sobject('LoyaltyMemberCurrency').create(newMemberCurrency);
-              
-              if (createResult.success) {
-                console.log(`[TRANSACTION] ✅ Successfully created ${currency.Name} currency record (ID: ${createResult.id})`);
-              } else {
-                const errorMsg = createResult.errors 
-                  ? createResult.errors.map(e => `${e.statusCode}: ${e.message}`).join(', ')
-                  : 'Unknown error';
-                console.error(`[TRANSACTION] ❌ Failed to create ${currency.Name} currency record: ${errorMsg}`);
-              }
-            } catch (createError) {
-              console.error(`[TRANSACTION] ❌ Error creating ${currency.Name} currency record:`, createError.message);
+        for (const currency of missingCurrencies) {
+          try {
+            const newMemberCurrency = {
+              LoyaltyMemberId: member.Id,
+              LoyaltyProgramCurrencyId: currency.Id,
+              PointsBalance: 0
+            };
+            
+            console.log(`[TRANSACTION] Creating missing currency record: ${currency.Name}`);
+            const createResult = await conn.sobject('LoyaltyMemberCurrency').create(newMemberCurrency);
+            
+            if (createResult.success) {
+              console.log(`[TRANSACTION] ✅ Successfully created ${currency.Name} currency record (ID: ${createResult.id})`);
+            } else {
+              const errorMsg = createResult.errors 
+                ? createResult.errors.map(e => `${e.statusCode}: ${e.message}`).join(', ')
+                : 'Unknown error';
+              console.error(`[TRANSACTION] ❌ Failed to create ${currency.Name} currency record: ${errorMsg}`);
+              // Don't throw - continue with transaction, but log the issue
             }
+          } catch (createError) {
+            console.error(`[TRANSACTION] ❌ Error creating ${currency.Name} currency record:`, createError.message);
+            // Don't throw - continue with transaction, but log the issue
           }
         }
+        
+        // Wait a moment for Salesforce to process the new currency records
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
       
       if (voucherCode) {
