@@ -1009,15 +1009,81 @@ class SalesforceService {
     
     try {
       const result = await conn.query(`
-        SELECT Id, ActivityDate, TransactionAmount, Status,
-               JournalType.Name, JournalSubType.Name
+        SELECT Id, ActivityDate, TransactionAmount, Status, VoucherCode,
+               JournalType.Name, JournalSubType.Name, Name
         FROM TransactionJournal
         WHERE MemberId = '${memberId}'
         ORDER BY ActivityDate DESC
         LIMIT ${limit}
       `);
 
-      return result.records;
+      // Get currency IDs for points and coins
+      const member = await conn.sobject('LoyaltyProgramMember').retrieve(memberId);
+      const programId = member.ProgramId;
+      
+      const currencyResult = await conn.query(`
+        SELECT Id, Name
+        FROM LoyaltyProgramCurrency
+        WHERE LoyaltyProgramId = '${programId}'
+        AND (Name = 'Cirrus Bucks' OR Name = 'Cirrus Discount Coins')
+      `);
+      
+      const pointsCurrencyId = currencyResult.records.find(c => c.Name === 'Cirrus Bucks')?.Id;
+      const coinsCurrencyId = currencyResult.records.find(c => c.Name === 'Cirrus Discount Coins')?.Id;
+
+      // Enhance each transaction with points and coins earned
+      const enhancedTransactions = await Promise.all(result.records.map(async (transaction) => {
+        let pointsEarned = 0;
+        let coinsEarned = 0;
+        
+        try {
+          // Query for points earned (Cirrus Bucks) from LoyaltyLedger
+          if (pointsCurrencyId) {
+            const pointsResult = await conn.query(`
+              SELECT SUM(Points) totalPoints
+              FROM LoyaltyLedger
+              WHERE TransactionJournalId = '${transaction.Id}'
+              AND LoyaltyProgramCurrencyId = '${pointsCurrencyId}'
+              AND EventType = 'Credit'
+            `);
+            pointsEarned = pointsResult.records[0]?.totalPoints || 0;
+          }
+          
+          // Query for coins earned (Cirrus Discount Coins) from LoyaltyLedger
+          if (coinsCurrencyId) {
+            const coinsResult = await conn.query(`
+              SELECT SUM(Points) totalCoins
+              FROM LoyaltyLedger
+              WHERE TransactionJournalId = '${transaction.Id}'
+              AND LoyaltyProgramCurrencyId = '${coinsCurrencyId}'
+              AND EventType = 'Credit'
+            `);
+            coinsEarned = coinsResult.records[0]?.totalCoins || 0;
+          }
+          
+          // If no ledger entries found, calculate from transaction amount
+          // Points = rounded transaction amount, Coins = exact transaction amount
+          if (pointsEarned === 0 && coinsEarned === 0 && transaction.TransactionAmount) {
+            pointsEarned = Math.round(transaction.TransactionAmount);
+            coinsEarned = transaction.TransactionAmount;
+          }
+        } catch (ledgerError) {
+          console.log(`[TRANSACTIONS] Could not fetch ledger entries for transaction ${transaction.Id}:`, ledgerError.message);
+          // Fallback to calculated values
+          if (transaction.TransactionAmount) {
+            pointsEarned = Math.round(transaction.TransactionAmount);
+            coinsEarned = transaction.TransactionAmount;
+          }
+        }
+        
+        return {
+          ...transaction,
+          pointsEarned: pointsEarned,
+          coinsEarned: coinsEarned
+        };
+      }));
+
+      return enhancedTransactions;
     } catch (error) {
       console.error('Error getting transactions:', error);
       throw error;
