@@ -814,8 +814,7 @@ class SalesforceService {
               Points: coinsEarned,
               EventType: 'Credit',
               TransactionJournalId: resultTjId,
-              ActivityDate: new Date().toISOString().split('T')[0],
-              JournalDate: new Date().toISOString().split('T')[0]
+              ActivityDate: new Date().toISOString().split('T')[0]
             };
             
             console.log(`[COINS] Creating ledger entry:`, JSON.stringify(ledgerEntry, null, 2));
