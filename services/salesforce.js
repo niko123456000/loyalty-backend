@@ -26,7 +26,7 @@ class SalesforceService {
     
     // Always use Heroku URL for OAuth (even when running locally)
     // OAuth callbacks must go to the deployed Heroku app
-    const appName = process.env.HEROKU_APP_NAME || 'loyalty-backend-demo-714241525c2e';
+    const appName = process.env.HEROKU_APP_NAME || 'the-star-backend-714241525c2e';
     return `https://${appName}.herokuapp.com/oauth/callback`;
   }
 
@@ -41,7 +41,7 @@ class SalesforceService {
     
     // Always use Heroku URL for OAuth (even when running locally)
     // OAuth callbacks must go to the deployed Heroku app
-    const appName = process.env.HEROKU_APP_NAME || 'loyalty-backend-demo-714241525c2e';
+    const appName = process.env.HEROKU_APP_NAME || 'the-star-backend-714241525c2e';
     return `https://${appName}.herokuapp.com/oauth/login`;
   }
 
@@ -306,7 +306,7 @@ class SalesforceService {
       `;
       
       // Add program name filter if set
-      const programName = process.env.LOYALTY_PROGRAM_NAME || 'Cirrus Loyalty';
+      const programName = process.env.LOYALTY_PROGRAM_NAME || 'The Star Club';
       if (programName) {
         query += ` AND Program.Name = '${programName.replace(/'/g, "\\'")}'`;
       }
@@ -337,7 +337,7 @@ class SalesforceService {
     const conn = await this.ensureConnection();
     
     try {
-      const name = programName || process.env.LOYALTY_PROGRAM_NAME || 'Cirrus Loyalty';
+      const name = programName || process.env.LOYALTY_PROGRAM_NAME || 'The Star Club';
       const query = `SELECT Id, Name FROM LoyaltyProgram WHERE Name = '${name.replace(/'/g, "\\'")}' LIMIT 1`;
       const result = await conn.query(query);
       
@@ -490,6 +490,7 @@ class SalesforceService {
       `);
 
       // Find the primary currency (Cirrus Bucks) and coins currency (Cirrus Discount Coins)
+      // Note: Display names are "Tier Points" and "Casino Dollars" but Salesforce uses original names
       const primaryCurrency = currencyResult.records.find(c => 
         c.LoyaltyProgramCurrency?.Name === 'Cirrus Bucks' || 
         c.LoyaltyProgramCurrency?.Name === (process.env.LOYALTY_CURRENCY_NAME || 'Cirrus Bucks')
@@ -662,7 +663,7 @@ class SalesforceService {
         contactId: member.ContactId,
         programId: member.ProgramId,
         pointsBalance: calculatedBalance, // Use calculated balance from ledger entries
-        coinsBalance: coinsBalance, // Cirrus Discount Coins balance
+        coinsBalance: coinsBalance, // Cirrus Discount Coins balance (displayed as Casino Dollars)
         lastAccrualDate: currency ? currency.LastAccrualProcessedDate : null,
         tier: tier,
         // Include contact information for profile streams
@@ -694,6 +695,39 @@ class SalesforceService {
       };
 
       console.log('Creating transaction:', payload);
+      console.log(`[TRANSACTION] Member: ${membershipNumber}`);
+      
+      // Check member's currency setup before creating transaction
+      const member = await this.findMemberByNumber(membershipNumber);
+      if (member) {
+        console.log(`[TRANSACTION] Member ID: ${member.Id}, Program ID: ${member.ProgramId}`);
+        
+        // Check what currencies are associated with this member
+        const memberCurrencies = await conn.query(`
+          SELECT Id, PointsBalance, LoyaltyProgramCurrencyId, 
+                 LoyaltyProgramCurrency.Name, LoyaltyProgramCurrency.CurrencyIsoCode
+          FROM LoyaltyMemberCurrency
+          WHERE LoyaltyMemberId = '${member.Id}'
+        `);
+        
+        console.log(`[TRANSACTION] Member has ${memberCurrencies.totalSize} currency records:`);
+        memberCurrencies.records.forEach((curr, idx) => {
+          console.log(`[TRANSACTION]   ${idx + 1}. ${curr.LoyaltyProgramCurrency?.Name || 'Unknown'} (ID: ${curr.LoyaltyProgramCurrencyId}, Balance: ${curr.PointsBalance})`);
+        });
+        
+        // Check program currencies
+        const programCurrencies = await conn.query(`
+          SELECT Id, Name
+          FROM LoyaltyProgramCurrency
+          WHERE LoyaltyProgramId = '${member.ProgramId}'
+        `);
+        
+        console.log(`[TRANSACTION] Program has ${programCurrencies.totalSize} currencies:`);
+        programCurrencies.records.forEach((curr, idx) => {
+          console.log(`[TRANSACTION]   ${idx + 1}. ${curr.Name} (ID: ${curr.Id})`);
+        });
+      }
+      
       if (voucherCode) {
         console.log('Transaction includes voucher:', voucherCode);
       }
@@ -801,7 +835,7 @@ class SalesforceService {
         result.transactionJournalId = resultTjId;
       }
       
-      // Award Cirrus Discount Coins if coinsEarned is provided
+      // Award Cirrus Discount Coins if coinsEarned is provided (displayed as Casino Dollars in frontend)
       if (coinsEarned !== null && coinsEarned > 0 && isSuccess && resultTjId) {
         try {
           console.log(`[COINS] Awarding ${coinsEarned} Cirrus Discount Coins`);
@@ -1048,7 +1082,7 @@ class SalesforceService {
         let coinsEarned = 0;
         
         try {
-          // Query for points earned (Cirrus Bucks) from LoyaltyLedger
+          // Query for points earned (Cirrus Bucks) from LoyaltyLedger (displayed as Tier Points in frontend)
           if (pointsCurrencyId) {
             const pointsResult = await conn.query(`
               SELECT SUM(Points) totalPoints
@@ -1060,7 +1094,7 @@ class SalesforceService {
             pointsEarned = pointsResult.records[0]?.totalPoints || 0;
           }
           
-          // Query for coins earned (Cirrus Discount Coins) from LoyaltyLedger
+          // Query for coins earned (Cirrus Discount Coins) from LoyaltyLedger (displayed as Casino Dollars in frontend)
           if (coinsCurrencyId) {
             const coinsResult = await conn.query(`
               SELECT SUM(Points) totalCoins
@@ -1109,7 +1143,7 @@ class SalesforceService {
     const conn = await this.ensureConnection();
     
     try {
-      const programName = process.env.LOYALTY_PROGRAM_NAME || 'Cirrus Loyalty';
+      const programName = process.env.LOYALTY_PROGRAM_NAME || 'The Star Club';
       const instanceUrl = this.instanceUrl;
       
       // Salesforce Loyalty API endpoint for promotions

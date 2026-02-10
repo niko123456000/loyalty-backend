@@ -39,7 +39,7 @@ Edit `.env` file with your Salesforce credentials:
 SF_USERNAME=your-salesforce-username
 SF_PASSWORD=your-salesforce-password
 SF_LOGIN_URL=https://your-domain.my.salesforce.com
-LOYALTY_PROGRAM_NAME=Cirrus Loyalty
+LOYALTY_PROGRAM_NAME=The Star Club
 JWT_SECRET=change-this-to-a-random-secret-key
 PORT=3000
 ```
@@ -81,7 +81,7 @@ Login with membership number
     "email": "john@example.com",
     "status": "Active",
     "enrollmentDate": "2024-01-01",
-    "programName": "Cirrus Loyalty"
+    "programName": "The Star Club"
   }
 }
 ```
@@ -275,6 +275,59 @@ curl http://localhost:3000/api/loyalty/profile \
 ```
 
 ## Production Deployment
+
+### Heroku Deployment
+
+1. **Create Heroku App**:
+   ```bash
+   heroku create the-star-backend
+   ```
+
+2. **Set Environment Variables**:
+   ```bash
+   heroku config:set SF_USERNAME=your-username
+   heroku config:set SF_PASSWORD=your-password
+   heroku config:set SF_LOGIN_URL=https://your-domain.my.salesforce.com
+   heroku config:set SF_CLIENT_ID=your-client-id
+   heroku config:set SF_CLIENT_SECRET=your-client-secret
+   heroku config:set LOYALTY_PROGRAM_NAME="The Star Club"
+   heroku config:set JWT_SECRET=$(openssl rand -base64 32)
+   heroku config:set NODE_ENV=production
+   ```
+
+3. **Add Callback URL to Salesforce Connected App**:
+   - Add `https://your-app-name.herokuapp.com/oauth/callback` to Connected App callback URLs
+
+4. **Deploy**:
+   ```bash
+   git push heroku main
+   ```
+
+5. **Authorize Backend**:
+   - Visit `https://your-app-name.herokuapp.com/oauth/login`
+   - Log in with Salesforce credentials
+
+### Checking Logs
+
+View Heroku logs:
+```bash
+heroku logs --tail --app the-star-backend
+```
+
+Search for specific member:
+```bash
+heroku logs --app the-star-backend --num 1000 | grep -i "666"
+```
+
+Log prefixes for easier searching:
+- `[PROMOTIONS]` - Promotion-related logs
+- `[VOUCHERS]` - Voucher-related logs
+- `[TRANSACTION]` - Transaction processing logs
+- `[COINS]` - Casino Dollars logs
+- `[MEMBER]` - Member profile logs
+- `[TIER]` - Tier-related logs
+
+### General Production Checklist
 
 1. Set strong `JWT_SECRET` value
 2. Use environment variables (don't commit `.env`)

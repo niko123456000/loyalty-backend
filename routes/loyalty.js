@@ -289,8 +289,51 @@ router.get('/diagnose/:membershipNumber', authenticate, async (req, res, next) =
     // Get detailed member profile
     const profile = await salesforceService.getMemberProfile(member.Id);
     
+    // Get detailed currency information
+    const conn = await salesforceService.ensureConnection();
+    const memberCurrencies = await conn.query(`
+      SELECT Id, PointsBalance, LoyaltyProgramCurrencyId, 
+             LoyaltyProgramCurrency.Name, LoyaltyProgramCurrency.CurrencyIsoCode,
+             LastAccrualProcessedDate
+      FROM LoyaltyMemberCurrency
+      WHERE LoyaltyMemberId = '${member.Id}'
+    `);
+    
+    const programCurrencies = await conn.query(`
+      SELECT Id, Name
+      FROM LoyaltyProgramCurrency
+      WHERE LoyaltyProgramId = '${member.ProgramId}'
+    `);
+    
     // Check for potential issues
     const issues = [];
+    
+    // Check if member has required currencies
+    const hasCirrusBucks = memberCurrencies.records.some(c => 
+      c.LoyaltyProgramCurrency?.Name === 'Cirrus Bucks'
+    );
+    const hasCirrusDiscountCoins = memberCurrencies.records.some(c => 
+      c.LoyaltyProgramCurrency?.Name === 'Cirrus Discount Coins'
+    );
+    
+    if (!hasCirrusBucks) {
+      issues.push({
+        severity: 'ERROR',
+        field: 'LoyaltyMemberCurrency',
+        issue: 'Member is missing "Cirrus Bucks" currency record',
+        impact: 'Flow cannot process transactions - currency not found'
+      });
+    }
+    
+    if (!hasCirrusDiscountCoins) {
+      issues.push({
+        severity: 'WARNING',
+        field: 'LoyaltyMemberCurrency',
+        issue: 'Member is missing "Cirrus Discount Coins" currency record',
+        impact: 'Coins cannot be awarded'
+      });
+    }
+    
     const data = {
       member: {
         id: member.Id,
@@ -303,55 +346,79 @@ router.get('/diagnose/:membershipNumber', authenticate, async (req, res, next) =
         programId: member.ProgramId,
         programName: member.Program?.Name
       },
+      currencies: {
+        memberCurrencies: memberCurrencies.records.map(c => ({
+          id: c.Id,
+          currencyId: c.LoyaltyProgramCurrencyId,
+          currencyName: c.LoyaltyProgramCurrency?.Name,
+          balance: c.PointsBalance,
+          lastAccrualDate: c.LastAccrualProcessedDate
+        })),
+        programCurrencies: programCurrencies.records.map(c => ({
+          id: c.Id,
+          name: c.Name
+        })),
+        hasCirrusBucks: hasCirrusBucks,
+        hasCirrusDiscountCoins: hasCirrusDiscountCoins
+      },
       profile: {
         pointsBalance: profile.pointsBalance,
         coinsBalance: profile.coinsBalance,
         tier: profile.tier
       },
-      issues: []
+      issues: issues
     };
     
     // Check for missing Contact
     if (!member.ContactId) {
-      issues.push('Missing ContactId - Member has no associated Contact record');
-      data.issues.push('MISSING_CONTACT');
+      issues.push({
+        severity: 'ERROR',
+        field: 'ContactId',
+        issue: 'Member has no associated Contact record',
+        impact: 'Flow may fail if Contact fields are required'
+      });
     } else if (!member.Contact) {
-      issues.push('ContactId exists but Contact record could not be retrieved');
-      data.issues.push('CONTACT_RETRIEVAL_FAILED');
+      issues.push({
+        severity: 'WARNING',
+        field: 'Contact',
+        issue: 'ContactId exists but Contact record could not be retrieved'
+      });
     } else {
       if (!member.Contact.Email) {
-        issues.push('Contact exists but Email field is null/empty');
-        data.issues.push('MISSING_CONTACT_EMAIL');
+        issues.push({
+          severity: 'WARNING',
+          field: 'Contact.Email',
+          issue: 'Contact exists but Email field is null/empty'
+        });
       }
       if (!member.Contact.Name) {
-        issues.push('Contact exists but Name field is null/empty');
-        data.issues.push('MISSING_CONTACT_NAME');
+        issues.push({
+          severity: 'WARNING',
+          field: 'Contact.Name',
+          issue: 'Contact exists but Name field is null/empty'
+        });
       }
     }
     
     // Check for missing Program
     if (!member.ProgramId) {
-      issues.push('Missing ProgramId - Member has no associated Program');
-      data.issues.push('MISSING_PROGRAM');
-    }
-    
-    // Check for missing currencies
-    if (profile.pointsBalance === null || profile.pointsBalance === undefined) {
-      issues.push('Points balance is null - No LoyaltyMemberCurrency record found for Cirrus Bucks');
-      data.issues.push('MISSING_POINTS_CURRENCY');
-    }
-    
-    if (profile.coinsBalance === null || profile.coinsBalance === undefined) {
-      issues.push('Coins balance is null - No LoyaltyMemberCurrency record found for Cirrus Discount Coins');
-      data.issues.push('MISSING_COINS_CURRENCY');
+      issues.push({
+        severity: 'ERROR',
+        field: 'ProgramId',
+        issue: 'Member has no associated Program'
+      });
     }
     
     // Check for missing tier
     if (!profile.tier || !profile.tier.name) {
-      issues.push('No tier found - Member may not have a LoyaltyMemberTier record');
-      data.issues.push('MISSING_TIER');
+      issues.push({
+        severity: 'INFO',
+        field: 'LoyaltyMemberTier',
+        issue: 'No tier found - Member may not have a LoyaltyMemberTier record'
+      });
     }
     
+    // Update data.issues
     data.issues = issues;
     
     res.json({
@@ -360,10 +427,11 @@ router.get('/diagnose/:membershipNumber', authenticate, async (req, res, next) =
       summary: {
         hasContact: !!member.ContactId,
         hasProgram: !!member.ProgramId,
-        hasPointsCurrency: profile.pointsBalance !== null && profile.pointsBalance !== undefined,
-        hasCoinsCurrency: profile.coinsBalance !== null && profile.coinsBalance !== undefined,
+        hasPointsCurrency: hasCirrusBucks,
+        hasCoinsCurrency: hasCirrusDiscountCoins,
         hasTier: !!profile.tier && !!profile.tier.name,
-        issueCount: issues.length
+        issueCount: issues.length,
+        criticalIssues: issues.filter(i => i.severity === 'ERROR').length
       }
     });
   } catch (error) {

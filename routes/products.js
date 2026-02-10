@@ -9,219 +9,165 @@ function generatePlaceholderSVG(text, bgColor, textColor = 'FFFFFF') {
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
 }
 
-// Category color mapping
+// Category color mapping - Casino/Luxury theme
 const categoryColors = {
-  'Beverages': { bg: '4A90E2', text: 'FFFFFF' },
-  'Snacks': { bg: 'F5A623', text: 'FFFFFF' },
-  'Wellness': { bg: '7ED321', text: 'FFFFFF' },
-  'Accessories': { bg: '9013FE', text: 'FFFFFF' },
+  'Accommodation': { bg: '1a1a2e', text: 'D4AF37' }, // Dark navy with gold
+  'Dining': { bg: '8B0000', text: 'FFD700' }, // Deep red with gold
+  'Experiences': { bg: '2C1810', text: 'FFD700' }, // Dark brown with gold
+  'Retail': { bg: '000000', text: 'D4AF37' }, // Black with gold
 };
 
-// Expanded product catalog with more variety
+// The Star Sydney Product Catalog
 const PRODUCTS = [
-  // Beverages
+  // Accommodation - The "Stay" Category
   {
-    id: '1',
-    name: 'Premium Coffee',
-    description: 'Artisan roasted coffee beans from Colombia',
-    price: 24.99,
-    category: 'Beverages',
-    imageUrl: generatePlaceholderSVG('Coffee', categoryColors.Beverages.bg, categoryColors.Beverages.text),
+    id: 'acc-1',
+    name: 'The Darling Hotel',
+    description: 'Forbes 5-Star boutique hotel. Exclusive, artistic, bespoke experience. One night stay.',
+    price: 450.00,
+    category: 'Accommodation',
+    imageUrl: generatePlaceholderSVG('The Darling', categoryColors.Accommodation.bg, categoryColors.Accommodation.text),
     inStock: true
   },
   {
-    id: '2',
-    name: 'Organic Tea Set',
-    description: 'Collection of premium organic teas (12 varieties)',
-    price: 34.99,
-    category: 'Beverages',
-    imageUrl: generatePlaceholderSVG('Tea', categoryColors.Beverages.bg, categoryColors.Beverages.text),
+    id: 'acc-2',
+    name: 'The Star Grand Hotel',
+    description: 'Luxury 5-star accommodation. Opulent, central to the casino floor. One night stay.',
+    price: 380.00,
+    category: 'Accommodation',
+    imageUrl: generatePlaceholderSVG('Star Grand', categoryColors.Accommodation.bg, categoryColors.Accommodation.text),
     inStock: true
   },
   {
-    id: '5',
-    name: 'Energy Drink',
-    description: 'Natural energy boost drink with vitamins',
-    price: 4.99,
-    category: 'Beverages',
-    imageUrl: generatePlaceholderSVG('Energy', categoryColors.Beverages.bg, categoryColors.Beverages.text),
-    inStock: true
-  },
-  {
-    id: '7',
-    name: 'Sparkling Water',
-    description: 'Naturally flavored sparkling water (12-pack)',
-    price: 2.99,
-    category: 'Beverages',
-    imageUrl: generatePlaceholderSVG('Water', categoryColors.Beverages.bg, categoryColors.Beverages.text),
-    inStock: true
-  },
-  {
-    id: '9',
-    name: 'Cold Brew Coffee',
-    description: 'Smooth cold brew concentrate (32oz)',
-    price: 18.99,
-    category: 'Beverages',
-    imageUrl: generatePlaceholderSVG('Cold Brew', categoryColors.Beverages.bg, categoryColors.Beverages.text),
-    inStock: true
-  },
-  {
-    id: '10',
-    name: 'Matcha Green Tea',
-    description: 'Premium ceremonial grade matcha powder',
-    price: 29.99,
-    category: 'Beverages',
-    imageUrl: generatePlaceholderSVG('Matcha', categoryColors.Beverages.bg, categoryColors.Beverages.text),
-    inStock: true
-  },
-  {
-    id: '11',
-    name: 'Kombucha',
-    description: 'Probiotic fermented tea drink',
-    price: 5.99,
-    category: 'Beverages',
-    imageUrl: generatePlaceholderSVG('Kombucha', categoryColors.Beverages.bg, categoryColors.Beverages.text),
+    id: 'acc-3',
+    name: 'The Star Grand Residences',
+    description: 'High-end apartment-style suites. Perfect for extended stays. One night stay.',
+    price: 520.00,
+    category: 'Accommodation',
+    imageUrl: generatePlaceholderSVG('Residences', categoryColors.Accommodation.bg, categoryColors.Accommodation.text),
     inStock: true
   },
   
-  // Snacks
+  // Dining - The "Dine" Category
   {
-    id: '3',
-    name: 'Gourmet Chocolates',
-    description: 'Handcrafted artisan chocolates (16 pieces)',
-    price: 19.99,
-    category: 'Snacks',
-    imageUrl: generatePlaceholderSVG('Chocolate', categoryColors.Snacks.bg, categoryColors.Snacks.text),
+    id: 'dine-1',
+    name: 'Sokyo',
+    description: 'Innovative Japanese dining by celebrity chef. Omakase experience. High ticket value.',
+    price: 280.00,
+    category: 'Dining',
+    imageUrl: generatePlaceholderSVG('Sokyo', categoryColors.Dining.bg, categoryColors.Dining.text),
     inStock: true
   },
   {
-    id: '4',
-    name: 'Trail Mix',
-    description: 'Healthy mixed nuts and dried fruits (1lb)',
-    price: 12.99,
-    category: 'Snacks',
-    imageUrl: generatePlaceholderSVG('Trail Mix', categoryColors.Snacks.bg, categoryColors.Snacks.text),
+    id: 'dine-2',
+    name: 'BLACK Bar & Grill',
+    description: 'Premium steakhouse overlooking Sydney Harbour. Signature dining experience.',
+    price: 220.00,
+    category: 'Dining',
+    imageUrl: generatePlaceholderSVG('BLACK', categoryColors.Dining.bg, categoryColors.Dining.text),
     inStock: true
   },
   {
-    id: '6',
-    name: 'Protein Bar',
-    description: 'High protein snack bar (12-pack)',
-    price: 3.99,
-    category: 'Snacks',
-    imageUrl: generatePlaceholderSVG('Protein', categoryColors.Snacks.bg, categoryColors.Snacks.text),
+    id: 'dine-3',
+    name: 'Flying Fish',
+    description: 'Modern Australian seafood with artisanal wine lists. Harbour views.',
+    price: 180.00,
+    category: 'Dining',
+    imageUrl: generatePlaceholderSVG('Flying Fish', categoryColors.Dining.bg, categoryColors.Dining.text),
     inStock: true
   },
   {
-    id: '8',
-    name: 'Granola',
-    description: 'Organic crunchy granola (16oz)',
-    price: 8.99,
-    category: 'Snacks',
-    imageUrl: generatePlaceholderSVG('Granola', categoryColors.Snacks.bg, categoryColors.Snacks.text),
+    id: 'dine-4',
+    name: 'Cucina Porto',
+    description: 'Authentic, upscale Italian dining. Traditional recipes with modern flair.',
+    price: 150.00,
+    category: 'Dining',
+    imageUrl: generatePlaceholderSVG('Cucina', categoryColors.Dining.bg, categoryColors.Dining.text),
     inStock: true
   },
   {
-    id: '12',
-    name: 'Kale Chips',
-    description: 'Crispy baked kale chips (4oz)',
-    price: 6.99,
-    category: 'Snacks',
-    imageUrl: generatePlaceholderSVG('Kale Chips', categoryColors.Snacks.bg, categoryColors.Snacks.text),
-    inStock: true
-  },
-  {
-    id: '13',
-    name: 'Almond Butter',
-    description: 'Creamy organic almond butter (16oz)',
-    price: 14.99,
-    category: 'Snacks',
-    imageUrl: generatePlaceholderSVG('Almond Butter', categoryColors.Snacks.bg, categoryColors.Snacks.text),
-    inStock: true
-  },
-  {
-    id: '14',
-    name: 'Rice Cakes',
-    description: 'Whole grain rice cakes (12-pack)',
-    price: 4.99,
-    category: 'Snacks',
-    imageUrl: generatePlaceholderSVG('Rice Cakes', categoryColors.Snacks.bg, categoryColors.Snacks.text),
+    id: 'dine-5',
+    name: 'Fat Noodle',
+    description: 'Asian street food by Luke Nguyen. Perfect for mid-tier rewards.',
+    price: 85.00,
+    category: 'Dining',
+    imageUrl: generatePlaceholderSVG('Fat Noodle', categoryColors.Dining.bg, categoryColors.Dining.text),
     inStock: true
   },
   
-  // Wellness
+  // Experiences - The "Play" Category
   {
-    id: '15',
-    name: 'Vitamin D3',
-    description: 'High potency vitamin D3 supplements (60ct)',
-    price: 16.99,
-    category: 'Wellness',
-    imageUrl: generatePlaceholderSVG('Vitamin D', categoryColors.Wellness.bg, categoryColors.Wellness.text),
+    id: 'exp-1',
+    name: 'The Darling Spa',
+    description: 'One of Sydney\'s most luxurious day spas. Facials, massages, body wraps.',
+    price: 320.00,
+    category: 'Experiences',
+    imageUrl: generatePlaceholderSVG('Spa', categoryColors.Experiences.bg, categoryColors.Experiences.text),
     inStock: true
   },
   {
-    id: '16',
-    name: 'Probiotics',
-    description: 'Daily probiotic capsules (30ct)',
-    price: 24.99,
-    category: 'Wellness',
-    imageUrl: generatePlaceholderSVG('Probiotics', categoryColors.Wellness.bg, categoryColors.Wellness.text),
+    id: 'exp-2',
+    name: 'Sydney Lyric Theatre',
+    description: 'World-class musicals (Hamilton, Wicked). Premium seating for two.',
+    price: 250.00,
+    category: 'Experiences',
+    imageUrl: generatePlaceholderSVG('Theatre', categoryColors.Experiences.bg, categoryColors.Experiences.text),
     inStock: true
   },
   {
-    id: '17',
-    name: 'Omega-3 Fish Oil',
-    description: 'High quality fish oil capsules (90ct)',
-    price: 19.99,
-    category: 'Wellness',
-    imageUrl: generatePlaceholderSVG('Omega 3', categoryColors.Wellness.bg, categoryColors.Wellness.text),
+    id: 'exp-3',
+    name: 'Cherry Cocktail Bar',
+    description: 'Exclusive cocktail bar with DJ sets. VIP table reservation.',
+    price: 180.00,
+    category: 'Experiences',
+    imageUrl: generatePlaceholderSVG('Cherry', categoryColors.Experiences.bg, categoryColors.Experiences.text),
     inStock: true
   },
   {
-    id: '18',
-    name: 'Multivitamin',
-    description: 'Complete daily multivitamin (60ct)',
-    price: 22.99,
-    category: 'Wellness',
-    imageUrl: generatePlaceholderSVG('Multivitamin', categoryColors.Wellness.bg, categoryColors.Wellness.text),
+    id: 'exp-4',
+    name: 'Rock Lily',
+    description: 'Live music venue with stocked whiskey bar. Premium experience.',
+    price: 150.00,
+    category: 'Experiences',
+    imageUrl: generatePlaceholderSVG('Rock Lily', categoryColors.Experiences.bg, categoryColors.Experiences.text),
+    inStock: true
+  },
+  {
+    id: 'exp-5',
+    name: '24/7 Sports Bar',
+    description: 'Massive LED screens, casual pub food. Perfect for game day.',
+    price: 75.00,
+    category: 'Experiences',
+    imageUrl: generatePlaceholderSVG('Sports Bar', categoryColors.Experiences.bg, categoryColors.Experiences.text),
     inStock: true
   },
   
-  // Accessories
+  // Retail - The "Shop" Category
   {
-    id: '19',
-    name: 'Reusable Water Bottle',
-    description: 'Stainless steel insulated water bottle (32oz)',
-    price: 29.99,
-    category: 'Accessories',
-    imageUrl: generatePlaceholderSVG('Water Bottle', categoryColors.Accessories.bg, categoryColors.Accessories.text),
+    id: 'retail-1',
+    name: 'Kennedy Watches',
+    description: 'Official retailer for Rolex and luxury timepieces. Consultation included.',
+    price: 8500.00,
+    category: 'Retail',
+    imageUrl: generatePlaceholderSVG('Kennedy', categoryColors.Retail.bg, categoryColors.Retail.text),
     inStock: true
   },
   {
-    id: '20',
-    name: 'Coffee Mug',
-    description: 'Ceramic travel mug with lid',
-    price: 15.99,
-    category: 'Accessories',
-    imageUrl: generatePlaceholderSVG('Coffee Mug', categoryColors.Accessories.bg, categoryColors.Accessories.text),
+    id: 'retail-2',
+    name: 'Luxury Timepiece Consultation',
+    description: 'Personal consultation for luxury watch selection at Kennedy.',
+    price: 500.00,
+    category: 'Retail',
+    imageUrl: generatePlaceholderSVG('Consultation', categoryColors.Retail.bg, categoryColors.Retail.text),
     inStock: true
   },
   {
-    id: '21',
-    name: 'Lunch Box',
-    description: 'Insulated lunch box with compartments',
-    price: 24.99,
-    category: 'Accessories',
-    imageUrl: generatePlaceholderSVG('Lunch Box', categoryColors.Accessories.bg, categoryColors.Accessories.text),
-    inStock: true
-  },
-  {
-    id: '22',
-    name: 'Yoga Mat',
-    description: 'Eco-friendly non-slip yoga mat',
-    price: 39.99,
-    category: 'Accessories',
-    imageUrl: generatePlaceholderSVG('Yoga Mat', categoryColors.Accessories.bg, categoryColors.Accessories.text),
+    id: 'retail-3',
+    name: 'Premium Gift Voucher',
+    description: 'Flexible gift voucher for luxury retail partners.',
+    price: 200.00,
+    category: 'Retail',
+    imageUrl: generatePlaceholderSVG('Gift Card', categoryColors.Retail.bg, categoryColors.Retail.text),
     inStock: true
   }
 ];
