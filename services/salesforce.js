@@ -739,10 +739,10 @@ class SalesforceService {
         
         for (const currency of missingCurrencies) {
           try {
+            // Don't set PointsBalance - it may not be writable and should default to 0
             const newMemberCurrency = {
               LoyaltyMemberId: member.Id,
-              LoyaltyProgramCurrencyId: currency.Id,
-              PointsBalance: 0
+              LoyaltyProgramCurrencyId: currency.Id
             };
             
             console.log(`[TRANSACTION] Creating missing currency record: ${currency.Name}`);
