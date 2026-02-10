@@ -267,4 +267,109 @@ router.post('/vouchers/validate', authenticate, async (req, res, next) => {
   }
 });
 
+/**
+ * GET /api/loyalty/diagnose/:membershipNumber
+ * Diagnostic endpoint to check member data and identify missing fields
+ */
+router.get('/diagnose/:membershipNumber', authenticate, async (req, res, next) => {
+  try {
+    const membershipNumber = req.params.membershipNumber;
+    
+    console.log(`[DIAGNOSE] Checking member: ${membershipNumber}`);
+    
+    const member = await salesforceService.findMemberByNumber(membershipNumber);
+    
+    if (!member) {
+      return res.status(404).json({
+        error: 'Member not found',
+        membershipNumber: membershipNumber
+      });
+    }
+    
+    // Get detailed member profile
+    const profile = await salesforceService.getMemberProfile(member.Id);
+    
+    // Check for potential issues
+    const issues = [];
+    const data = {
+      member: {
+        id: member.Id,
+        membershipNumber: member.MembershipNumber,
+        contactId: member.ContactId,
+        contactName: member.Contact?.Name,
+        contactEmail: member.Contact?.Email,
+        memberStatus: member.MemberStatus,
+        enrollmentDate: member.EnrollmentDate,
+        programId: member.ProgramId,
+        programName: member.Program?.Name
+      },
+      profile: {
+        pointsBalance: profile.pointsBalance,
+        coinsBalance: profile.coinsBalance,
+        tier: profile.tier
+      },
+      issues: []
+    };
+    
+    // Check for missing Contact
+    if (!member.ContactId) {
+      issues.push('Missing ContactId - Member has no associated Contact record');
+      data.issues.push('MISSING_CONTACT');
+    } else if (!member.Contact) {
+      issues.push('ContactId exists but Contact record could not be retrieved');
+      data.issues.push('CONTACT_RETRIEVAL_FAILED');
+    } else {
+      if (!member.Contact.Email) {
+        issues.push('Contact exists but Email field is null/empty');
+        data.issues.push('MISSING_CONTACT_EMAIL');
+      }
+      if (!member.Contact.Name) {
+        issues.push('Contact exists but Name field is null/empty');
+        data.issues.push('MISSING_CONTACT_NAME');
+      }
+    }
+    
+    // Check for missing Program
+    if (!member.ProgramId) {
+      issues.push('Missing ProgramId - Member has no associated Program');
+      data.issues.push('MISSING_PROGRAM');
+    }
+    
+    // Check for missing currencies
+    if (profile.pointsBalance === null || profile.pointsBalance === undefined) {
+      issues.push('Points balance is null - No LoyaltyMemberCurrency record found for Cirrus Bucks');
+      data.issues.push('MISSING_POINTS_CURRENCY');
+    }
+    
+    if (profile.coinsBalance === null || profile.coinsBalance === undefined) {
+      issues.push('Coins balance is null - No LoyaltyMemberCurrency record found for Cirrus Discount Coins');
+      data.issues.push('MISSING_COINS_CURRENCY');
+    }
+    
+    // Check for missing tier
+    if (!profile.tier || !profile.tier.name) {
+      issues.push('No tier found - Member may not have a LoyaltyMemberTier record');
+      data.issues.push('MISSING_TIER');
+    }
+    
+    data.issues = issues;
+    
+    res.json({
+      success: true,
+      data: data,
+      summary: {
+        hasContact: !!member.ContactId,
+        hasProgram: !!member.ProgramId,
+        hasPointsCurrency: profile.pointsBalance !== null && profile.pointsBalance !== undefined,
+        hasCoinsCurrency: profile.coinsBalance !== null && profile.coinsBalance !== undefined,
+        hasTier: !!profile.tier && !!profile.tier.name,
+        issueCount: issues.length
+      }
+    });
+  } catch (error) {
+    console.error('[DIAGNOSE] Error:', error);
+    next(error);
+  }
+});
+
 module.exports = router;
