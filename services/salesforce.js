@@ -610,36 +610,47 @@ class SalesforceService {
       }
 
       // Calculate coins balance if coins currency exists
+      // Prioritize PointsBalance from LoyaltyMemberCurrency (official balance)
       let coinsBalance = 0;
-      if (coinsCurrency && coinsCurrency.LoyaltyProgramCurrencyId) {
-        try {
-          const coinsCreditsResult = await conn.query(`
-            SELECT SUM(Points) totalCoins
-            FROM LoyaltyLedger
-            WHERE LoyaltyProgramMemberId = '${memberId}'
-            AND LoyaltyProgramCurrencyId = '${coinsCurrency.LoyaltyProgramCurrencyId}'
-            AND EventType = 'Credit'
-          `);
-          
-          const coinsDebitsResult = await conn.query(`
-            SELECT SUM(Points) totalCoins
-            FROM LoyaltyLedger
-            WHERE LoyaltyProgramMemberId = '${memberId}'
-            AND LoyaltyProgramCurrencyId = '${coinsCurrency.LoyaltyProgramCurrencyId}'
-            AND EventType = 'Debit'
-          `);
-          
-          const coinsCredits = coinsCreditsResult.records[0]?.totalCoins || 0;
-          const coinsDebits = coinsDebitsResult.records[0]?.totalCoins || 0;
-          coinsBalance = coinsCredits - coinsDebits;
-          
-          // Use PointsBalance if calculated balance is 0 and PointsBalance exists
-          if (coinsBalance === 0 && coinsCurrency.PointsBalance) {
-            coinsBalance = coinsCurrency.PointsBalance;
+      if (coinsCurrency) {
+        // Use PointsBalance directly from LoyaltyMemberCurrency as the source of truth
+        coinsBalance = coinsCurrency.PointsBalance || 0;
+        
+        console.log(`[MEMBER] Cirrus Discount Coins balance from LoyaltyMemberCurrency: ${coinsBalance}`);
+        
+        // Only calculate from ledger if PointsBalance is 0 or null (for debugging/verification)
+        if ((coinsBalance === 0 || coinsBalance === null) && coinsCurrency.LoyaltyProgramCurrencyId) {
+          try {
+            const coinsCreditsResult = await conn.query(`
+              SELECT SUM(Points) totalCoins
+              FROM LoyaltyLedger
+              WHERE LoyaltyProgramMemberId = '${memberId}'
+              AND LoyaltyProgramCurrencyId = '${coinsCurrency.LoyaltyProgramCurrencyId}'
+              AND EventType = 'Credit'
+            `);
+            
+            const coinsDebitsResult = await conn.query(`
+              SELECT SUM(Points) totalCoins
+              FROM LoyaltyLedger
+              WHERE LoyaltyProgramMemberId = '${memberId}'
+              AND LoyaltyProgramCurrencyId = '${coinsCurrency.LoyaltyProgramCurrencyId}'
+              AND EventType = 'Debit'
+            `);
+            
+            const coinsCredits = coinsCreditsResult.records[0]?.totalCoins || 0;
+            const coinsDebits = coinsDebitsResult.records[0]?.totalCoins || 0;
+            const calculatedCoinsBalance = coinsCredits - coinsDebits;
+            
+            console.log(`[MEMBER] Calculated coins balance from ledger: ${calculatedCoinsBalance} (Credits: ${coinsCredits}, Debits: ${coinsDebits})`);
+            
+            // Use calculated balance if PointsBalance was 0
+            if (coinsBalance === 0 && calculatedCoinsBalance > 0) {
+              coinsBalance = calculatedCoinsBalance;
+              console.log(`[MEMBER] Using calculated coins balance: ${coinsBalance}`);
+            }
+          } catch (coinsError) {
+            console.log('[MEMBER] Could not calculate coins balance from ledger:', coinsError.message);
           }
-        } catch (coinsError) {
-          console.log('[MEMBER] Could not calculate coins balance:', coinsError.message);
-          coinsBalance = coinsCurrency.PointsBalance || 0;
         }
       }
 
