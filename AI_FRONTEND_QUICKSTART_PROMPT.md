@@ -27,6 +27,8 @@ Requirements:
 - Store page:
   - GET /api/products/categories
   - GET /api/products (category + search filtering)
+  - Add a business-theme product mapper so catalog names/descriptions/images can be renamed to match the target business domain
+    (example: plumbing-themed product names)
 - Loyalty page:
   - GET /api/loyalty/profile
   - GET /api/loyalty/transactions
@@ -42,6 +44,9 @@ Requirements:
 - Keep loading, empty, and error states for each API data source
 - Preserve cart state on transient API failure
 - Do not invent or rename backend fields
+- It is allowed and expected to remap product display names/descriptions for theme fit,
+  while preserving backend product IDs/prices for logic correctness
+- Send themed product names in purchase line items so checkout and transaction labels align to business context
 
 4) Engineering quality
 - Use reusable API client layer with interceptors/middleware

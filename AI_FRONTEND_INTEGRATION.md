@@ -129,6 +129,22 @@ Response:
 ### GET `/api/products/:id`
 Response: one product object.
 
+### Product Theming for Different Businesses (Required)
+
+When building a frontend for a different business theme (for example: plumbing, fitness, airline, retail), adapt product presentation in the frontend without changing backend endpoints.
+
+- Build a frontend-side product theme mapper that transforms product display fields:
+  - `name` -> themed display name
+  - `description` -> themed description
+  - optional category label and image overrides
+- Keep original backend product `id`, `price`, and `inStock` as source-of-truth fields.
+- Theming can be static config or driven by a selected business profile.
+- During checkout, send the themed `productName` in `lineItems` so transaction labels match the chosen business theme.
+
+Example (plumbing theme):
+- Backend product `"The Darling Hotel"` can display as `"Emergency Pipe Repair Callout"`.
+- Backend product `"BLACK Bar & Grill"` can display as `"Hot Water System Service"`.
+
 ### GET `/api/loyalty/profile`
 Response (shape may contain additional fields):
 ```json
@@ -243,6 +259,7 @@ Response:
   2. apply client-side discount preview
   3. pass `voucherCode` again during purchase
 - If purchase fails, do not mutate cart permanently.
+- Keep product theming deterministic so product name mapping stays stable across store/cart/checkout screens.
 
 ## 5) Error Handling Contract
 
@@ -278,6 +295,7 @@ Response:
 - [ ] API client with bearer token interceptor
 - [ ] 401 interceptor -> clear session and redirect login
 - [ ] Store page (`/products`, `/products/categories`)
+- [ ] Business-theme product mapper (rename product names/descriptions/images by theme)
 - [ ] Loyalty page (`/loyalty/profile`, `/loyalty/transactions`, `/loyalty/vouchers`)
 - [ ] Voucher validation + checkout (`/loyalty/vouchers/validate`, `/loyalty/purchase`)
 - [ ] Loading, empty, and error states for each data source
