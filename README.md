@@ -346,3 +346,5 @@ To connect the Android app to this backend:
 3. Implement membership number login UI
 4. Store JWT token instead of Salesforce tokens
 5. Update all API calls to use backend endpoints
+
+For AI agents building a brand-new web/mobile frontend from scratch, use `AI_FRONTEND_INTEGRATION.md`.
