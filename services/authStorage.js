@@ -36,9 +36,20 @@ class AuthStorage {
     }
 
     try {
-      this.redis = new Redis(process.env.REDIS_URL, {
+      const redisOptions = {
         maxRetriesPerRequest: 2,
         enableReadyCheck: true
+      };
+
+      if (process.env.REDIS_URL.startsWith('rediss://')) {
+        redisOptions.tls = {
+          rejectUnauthorized: false
+        };
+      }
+
+      this.redis = new Redis(process.env.REDIS_URL, redisOptions);
+      this.redis.on('error', (err) => {
+        console.warn('[AUTH] Redis client error:', err.message);
       });
       await this.redis.ping();
       this.redisReady = true;
