@@ -348,3 +348,4 @@ To connect the Android app to this backend:
 5. Update all API calls to use backend endpoints
 
 For AI agents building a brand-new web/mobile frontend from scratch, use `AI_FRONTEND_INTEGRATION.md`.
+For a copy/paste starter prompt, use `AI_FRONTEND_QUICKSTART_PROMPT.md`.
