@@ -1,9 +1,8 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
-
-// Store code verifiers temporarily (in production, use Redis or similar)
-const codeVerifiers = new Map();
+const authStorage = require('../services/authStorage');
+const salesforceService = require('../services/salesforce');
 
 /**
  * Generate PKCE code verifier and challenge
@@ -25,26 +24,17 @@ function generatePKCE() {
  * GET /oauth/login
  * Redirect to Salesforce for authorization with PKCE
  */
-router.get('/login', (req, res) => {
+router.get('/login', async (req, res) => {
   const { codeVerifier, codeChallenge } = generatePKCE();
   
   // Generate a state parameter to prevent CSRF
   const state = crypto.randomBytes(16).toString('hex');
   
-  // Store verifier and state for later verification
-  codeVerifiers.set(state, { codeVerifier, timestamp: Date.now() });
-  
-  // Clean up old verifiers (older than 10 minutes)
-  for (const [key, value] of codeVerifiers.entries()) {
-    if (Date.now() - value.timestamp > 600000) {
-      codeVerifiers.delete(key);
-    }
-  }
-  
-  // Auto-detect redirect URI based on request
-  const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-  const host = req.headers['x-forwarded-host'] || req.get('host');
-  const redirectUri = process.env.OAUTH_REDIRECT_URI || `${protocol}://${host}/oauth/callback`;
+  await authStorage.initialize();
+  await authStorage.savePkceState(state, { codeVerifier, timestamp: Date.now() });
+
+  // Use canonical redirect URI to avoid verifier mismatch across hosts/environments
+  const redirectUri = salesforceService.getRedirectUri();
   
   const authUrl = `${process.env.SF_LOGIN_URL}/services/oauth2/authorize?` +
     `response_type=code` +
@@ -80,26 +70,23 @@ router.get('/callback', async (req, res) => {
     return res.status(400).send('No state parameter received');
   }
 
-  // Retrieve the code verifier
-  const storedData = codeVerifiers.get(state);
+  await authStorage.initialize();
+
+  // Retrieve and consume the code verifier
+  const storedData = await authStorage.consumePkceState(state);
   if (!storedData) {
     return res.status(400).send('Invalid state parameter or session expired');
   }
 
   const { codeVerifier } = storedData;
-  codeVerifiers.delete(state); // Clean up
 
   try {
     console.log('Received authorization code, exchanging for access token (with PKCE)...');
     
-    // Auto-detect redirect URI
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-    const host = req.headers['x-forwarded-host'] || req.get('host');
-    const redirectUri = process.env.OAUTH_REDIRECT_URI || `${protocol}://${host}/oauth/callback`;
+    const redirectUri = salesforceService.getRedirectUri();
     
     console.log('Using redirect URI:', redirectUri);
     
-    const salesforceService = require('../services/salesforce');
     await salesforceService.exchangeAuthorizationCode(code, codeVerifier, redirectUri);
 
     res.send(`

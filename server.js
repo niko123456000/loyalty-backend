@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const salesforceService = require('./services/salesforce');
+const authStorage = require('./services/authStorage');
 const authRoutes = require('./routes/auth');
 const loyaltyRoutes = require('./routes/loyalty');
 const productsRoutes = require('./routes/products');
@@ -10,39 +11,21 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware - CORS configuration
+// Allow all origins for now (can be restricted later if needed)
 const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    // Allow localhost for development
-    if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
-      return callback(null, true);
-    }
-    
-    // Allow any Heroku frontend URL
-    if (origin.includes('herokuapp.com')) {
-      return callback(null, true);
-    }
-    
-    // Allow any origin in development, restrict in production if needed
-    if (process.env.NODE_ENV === 'development') {
-      return callback(null, true);
-    }
-    
-    // In production, you might want to restrict this
-    callback(null, true);
-  },
+  origin: true, // Allow all origins
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposedHeaders: ['Authorization']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['Authorization'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 };
 
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Handle preflight requests explicitly
+// Explicitly handle OPTIONS preflight requests
 app.options('*', cors(corsOptions));
 
 // Request logging
@@ -337,6 +320,7 @@ app.get('/health', (req, res) => {
     status: 'ok', 
     timestamp: new Date().toISOString(),
     salesforce: isConnected ? 'connected' : 'disconnected',
+    authStorage: authStorage.getStatus(),
     oauth: {
       configured: hasOAuthConfig,
       loginUrl: hasOAuthConfig ? oauthLoginUrl : null,
@@ -346,10 +330,20 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Auth storage diagnostics endpoint
+app.get('/auth/storage-status', async (req, res) => {
+  await authStorage.initialize();
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    authStorage: authStorage.getStatus()
+  });
+});
+
 // Routes
-app.use('/api/auth', cors(corsOptions), authRoutes);
-app.use('/api/loyalty', cors(corsOptions), loyaltyRoutes);
-app.use('/api/products', cors(corsOptions), productsRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/loyalty', loyaltyRoutes);
+app.use('/api/products', productsRoutes);
 app.use('/oauth', require('./routes/oauth')); // OAuth flow for backend authorization
 
 // Error handling middleware

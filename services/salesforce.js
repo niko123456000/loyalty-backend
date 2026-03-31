@@ -1,10 +1,6 @@
 const jsforce = require('jsforce');
 const https = require('https');
-const fs = require('fs');
-const path = require('path');
-
-// File to persist tokens
-const TOKEN_FILE = path.join(__dirname, '../.tokens.json');
+const authStorage = require('./authStorage');
 
 class SalesforceService {
   constructor() {
@@ -23,11 +19,17 @@ class SalesforceService {
     if (process.env.OAUTH_REDIRECT_URI) {
       return process.env.OAUTH_REDIRECT_URI;
     }
-    
-    // Always use Heroku URL for OAuth (even when running locally)
-    // OAuth callbacks must go to the deployed Heroku app
-    const appName = process.env.HEROKU_APP_NAME || 'the-star-backend-714241525c2e';
-    return `https://${appName}.herokuapp.com/oauth/callback`;
+
+    if (process.env.APP_BASE_URL) {
+      return `${process.env.APP_BASE_URL.replace(/\/$/, '')}/oauth/callback`;
+    }
+
+    const appName = process.env.HEROKU_APP_NAME;
+    if (appName) {
+      return `https://${appName}.herokuapp.com/oauth/callback`;
+    }
+
+    return 'http://localhost:3000/oauth/callback';
   }
 
   /**
@@ -38,24 +40,31 @@ class SalesforceService {
     if (process.env.OAUTH_LOGIN_URL) {
       return process.env.OAUTH_LOGIN_URL;
     }
-    
-    // Always use Heroku URL for OAuth (even when running locally)
-    // OAuth callbacks must go to the deployed Heroku app
-    const appName = process.env.HEROKU_APP_NAME || 'the-star-backend-714241525c2e';
-    return `https://${appName}.herokuapp.com/oauth/login`;
+
+    if (process.env.APP_BASE_URL) {
+      return `${process.env.APP_BASE_URL.replace(/\/$/, '')}/oauth/login`;
+    }
+
+    const appName = process.env.HEROKU_APP_NAME;
+    if (appName) {
+      return `https://${appName}.herokuapp.com/oauth/login`;
+    }
+
+    return 'http://localhost:3000/oauth/login';
   }
 
   /**
    * Load saved tokens from file
    */
-  loadTokens() {
+  async loadTokens() {
     try {
-      if (fs.existsSync(TOKEN_FILE)) {
-        const data = JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf8'));
+      await authStorage.initialize();
+      const data = await authStorage.loadTokens();
+      if (data) {
         this.accessToken = data.accessToken;
         this.refreshToken = data.refreshToken;
         this.instanceUrl = data.instanceUrl;
-        console.log('Loaded saved tokens from file');
+        console.log('Loaded saved tokens from durable storage');
         return true;
       }
     } catch (error) {
@@ -67,16 +76,15 @@ class SalesforceService {
   /**
    * Save tokens to file
    */
-  saveTokens() {
+  async saveTokens() {
     try {
-      const data = {
+      await authStorage.initialize();
+      await authStorage.saveTokens({
         accessToken: this.accessToken,
         refreshToken: this.refreshToken,
-        instanceUrl: this.instanceUrl,
-        savedAt: new Date().toISOString()
-      };
-      fs.writeFileSync(TOKEN_FILE, JSON.stringify(data, null, 2));
-      console.log('Tokens saved to file');
+        instanceUrl: this.instanceUrl
+      });
+      console.log('Tokens saved to durable storage');
     } catch (error) {
       console.error('Error saving tokens:', error.message);
     }
@@ -89,7 +97,7 @@ class SalesforceService {
   async initialize() {
     try {
       // Try to load saved tokens
-      if (this.loadTokens() && this.accessToken) {
+      if (await this.loadTokens() && this.accessToken) {
         console.log('Attempting to use saved access token...');
         
         this.conn = new jsforce.Connection({
@@ -187,7 +195,7 @@ class SalesforceService {
       this.instanceUrl = authData.instance_url;
 
       // Save tokens for future use
-      this.saveTokens();
+      await this.saveTokens();
 
       // Create JSForce connection with OAuth2 configuration
       this.conn = new jsforce.Connection({
@@ -249,7 +257,7 @@ class SalesforceService {
       this.instanceUrl = authData.instance_url || this.instanceUrl;
 
       // Save updated tokens
-      this.saveTokens();
+      await this.saveTokens();
 
       // Update connection with OAuth2 configuration
       this.conn = new jsforce.Connection({
