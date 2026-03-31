@@ -6,7 +6,9 @@ Goal: build a working frontend experience without changing backend behavior.
 
 ## 1) Backend Base URL and Auth Model
 
-- Base URL: `https://<backend-host>`
+- Primary production backend (use this by default): `https://tstar-backend-929231-09db75fda58c.herokuapp.com`
+- Frontend builders should connect to the hosted backend above.
+- Do not ask frontend builders to deploy or run their own backend unless explicitly requested for local development.
 - Authentication model:
   - Frontend logs in with membership number.
   - Backend returns a JWT token.
@@ -253,7 +255,9 @@ Response:
 ## 6) CORS and Environment
 
 - Backend currently allows broad CORS (`origin: true`) and credentials.
-- For production frontend, set `VITE_API_BASE_URL` (or equivalent) to backend host.
+- For production frontend, set `VITE_API_BASE_URL` (or equivalent) to:
+  - `https://tstar-backend-929231-09db75fda58c.herokuapp.com`
+- Local backend setup is optional and only for backend contributors.
 - Do not call Salesforce directly from frontend.
 
 ## 7) Health + Ops Endpoints (for Setup UIs and Agents)

@@ -8,7 +8,7 @@ Copy/paste this into an AI coding agent (Cursor/Claude) when starting a new fron
 You are building a brand-new frontend for a loyalty commerce experience.
 
 Use this backend as the single source of truth:
-- Base URL: <SET_BACKEND_URL>
+- Base URL: https://tstar-backend-929231-09db75fda58c.herokuapp.com
 - Backend integration contract file: AI_FRONTEND_INTEGRATION.md
 
 Your task:
@@ -69,7 +69,7 @@ Execution instructions:
 
 ## Usage Notes
 
-- Replace `<SET_BACKEND_URL>` before running the prompt.
+- The prompt is preconfigured to the hosted production backend. Keep that URL unless told otherwise.
 - Keep `AI_FRONTEND_INTEGRATION.md` in the same repository/workspace so the agent can follow exact backend contracts.
 - If your target stack is known, prepend one line before the prompt, for example:
   - `Use React + Vite + TypeScript + Tailwind.`
